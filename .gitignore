@@ -1,1 +1,6 @@
 *.env
+*secrets.h
+*.ini
+
+*.vscode
+*.idea
