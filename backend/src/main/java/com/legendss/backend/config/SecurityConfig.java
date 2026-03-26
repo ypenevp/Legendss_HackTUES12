@@ -33,6 +33,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/wheelchairs/wheelchair/add", "/api/wheelchairs/wheelchair/delete/**", "/api/wheelchairs/wheelchair/get/**", "/api/wheelchairs/wheelchair/get/all").hasRole("USER")
                         .requestMatchers("/api/wheelchairs/wheelchair/update/**").permitAll()
 
+                        .requestMatchers("/api/hardware/**").permitAll()
+
+
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);

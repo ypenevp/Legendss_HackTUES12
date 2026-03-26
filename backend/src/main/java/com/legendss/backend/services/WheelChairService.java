@@ -86,4 +86,22 @@ public class WheelChairService {
 
         this.wheelChairRepository.deleteById(id);
     }
+
+    public void updateFromHardware(String token, WheelChair payload) {
+        WheelChair existing = this.wheelChairRepository.findByToken(token)
+                .orElseThrow(() -> new RuntimeException("Invalid Hardware Token"));
+
+        if (payload.getGpsCoordinate() != null && !payload.getGpsCoordinate().isBlank()) {
+            existing.setGpsCoordinate(payload.getGpsCoordinate());
+        }
+        if (payload.getSpeed() != null) {
+            existing.setSpeed(payload.getSpeed());
+        }
+        if (payload.getPanicStatus() != null) {
+            existing.setPanicStatus(payload.getPanicStatus());
+        }
+
+        this.wheelChairRepository.save(existing);
+    }
+
 }

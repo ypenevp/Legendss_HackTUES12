@@ -7,21 +7,18 @@
 #include <MPU6050.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include "secrets.h" // Ensure this contains any needed Wi-Fi/API credentials if you use them
+#include "secrets.h" 
 
-// ── OLED Display Setup ──────────
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-// Navigation State
 bool navigationActive = false;
 String direction = "STRAIGHT";
 int distance_m = 0;
 unsigned long lastDisplayUpdate = 0;
-const int TIME_ZONE_OFFSET = 2; // +2 hours for EET (Bulgaria)
+const int TIME_ZONE_OFFSET = 2; // +2 hours for Bulgaria
 
-// ── Hardware Pins ──────────
 #define SIM_RX_PIN 16
 #define SIM_TX_PIN 17
 HardwareSerial sim(1);
@@ -39,7 +36,6 @@ TinyGPSPlus gps;
 #define MPU_SDA_PIN 8
 #define MPU_SCL_PIN 9
 
-// ── MPU6050 & Fall Detection ──────────
 const bool ENABLE_GYRO = true;
 MPU6050 mpu;
 bool mpuReady = false;
@@ -59,7 +55,6 @@ static int fallCounter = 0;
 float Ax = 0, Ay = 0, Az = 1;
 float Gx = 0, Gy = 0, Gz = 0;
 
-// ── BLE Setup ──────────
 #define SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
@@ -73,7 +68,6 @@ float targetLat = 0.0;
 float targetLon = 0.0;
 bool targetReceived = false;
 
-// ── SOS Logic ──────────
 String emergencyNumbers[] = {"+359897406640", "+359887265727"};
 int numEmergencyContacts = 2;
 
@@ -90,12 +84,44 @@ const unsigned long DEBOUNCE_MS = 50;
 bool lastPanicState = HIGH;
 bool lastDeactivateState = HIGH;
 
-// ── OLED Functions ──────────
+unsigned long lastGpsSendTime = 0;
+const unsigned long GPS_SEND_INTERVAL = 60000; // 60 секунди (1 минута)
+const String HARDWARE_TOKEN = "ТУК_СЛОЖЕТЕ_ТОКЕНА_ОТ_БАЗАТА_НА_ТОЗИ_ПОТРЕБИТЕЛ";
+
+void sendDataToBackend(float lat, float lon, int speed, bool isPanic) {
+  String url = "https://asha-burned-tressa.ngrok-free.dev/api/hardware/update?token=" + HARDWARE_TOKEN;
+
+  String jsonPayload = "{\"gpsCoordinate\":\"" + String(lat, 6) + "," + String(lon, 6) +
+                       "\",\"speed\":" + String(speed) +
+                       ",\"panicStatus\":" + (isPanic ? "true" : "false") + "}";
+
+  sim.println("AT+HTTPINIT");
+  delay(1000);
+  sim.println("AT+HTTPPARA=\"URL\",\"" + url + "\"");
+  delay(1000);
+  sim.println("AT+HTTPPARA=\"CONTENT\",\"application/json\"");
+  delay(1000);
+
+  sim.print("AT+HTTPDATA=");
+  sim.print(jsonPayload.length());
+  sim.println(",10000");
+  delay(500);
+
+  sim.println(jsonPayload);
+  delay(1000);
+
+  sim.println("AT+HTTPACTION=1");
+  delay(5000);
+
+  sim.println("AT+HTTPTERM");
+  delay(500);
+}
+
 
 void drawArrow(String dir)
 {
   int cx = 64;
-  int cy = 34; // Centered vertically in the middle area
+  int cy = 34;
 
   if (dir == "STRAIGHT")
   {
@@ -127,7 +153,6 @@ void drawClock()
 
   if (gps.time.isValid() && gps.date.isValid())
   {
-    // Calculate local time
     int hour = gps.time.hour() + TIME_ZONE_OFFSET;
     if (hour >= 24)
       hour -= 24;
@@ -147,12 +172,10 @@ void drawClock()
     dateStr = String(dBuffer);
   }
 
-  // Display Date small at top right
   display.setTextSize(1);
   display.setCursor(35, 5);
   display.print(dateStr);
 
-  // Display Time large in center
   display.setTextSize(3);
   display.setCursor(20, 25);
   display.print(timeStr);
@@ -165,14 +188,12 @@ void updateDisplay()
 
   if (lockdown || alertTriggered)
   {
-    // --- SOS MODE ---
     display.setTextSize(2);
     display.setCursor(10, 25);
     display.print("SOS ALERT!");
   }
   else if (navigationActive)
   {
-    // --- NAVIGATION MODE ---
     display.setTextSize(1);
     display.setCursor(0, 0);
     display.print(direction);
@@ -186,14 +207,12 @@ void updateDisplay()
   }
   else
   {
-    // --- CLOCK MODE ---
     drawClock();
   }
 
   display.display();
 }
 
-// ── BLE & Parsing Functions ──────────
 
 void parseCoordinates(String data)
 {
@@ -216,7 +235,6 @@ void parseCoordinates(String data)
 
 void parseNavigation(String data)
 {
-  // Example format expected: "NAV:LEFT,150"
   if (data.startsWith("NAV:"))
   {
     String payload = data.substring(4);
@@ -267,7 +285,6 @@ class MyServerCallbacks : public BLEServerCallbacks
   void onDisconnect(BLEServer *pServer) { deviceConnected = false; }
 };
 
-// ── Core Helper Functions (MPU, SIM, etc.) ──────────
 
 void readMPU()
 {
@@ -516,18 +533,15 @@ void alertSignalBlinkLED()
   }
 }
 
-// ── Setup ──────────
 
 void setup()
 {
   Serial.begin(115200);
   delay(1000);
 
-  // Init I2C for both MPU6050 and OLED Display
   Wire.begin(MPU_SDA_PIN, MPU_SCL_PIN);
   Wire.setClock(100000);
 
-  // Init Display
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
   {
     Serial.println(F("SSD1306 allocation failed"));
@@ -571,8 +585,6 @@ void setup()
   }
 
   gpsSerial.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
-
-  // BLE Setup
   BLEDevice::init("Wheelchair-Nav");
   BLEServer *pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
@@ -584,7 +596,6 @@ void setup()
   BLEDevice::getAdvertising()->start();
   Serial.println("BLE Started.");
 
-  // SIM Setup
   Serial.println("\n>> SIM800L Init Start");
   sim.begin(9600, SERIAL_8N1, SIM_RX_PIN, SIM_TX_PIN);
   delay(2000);
@@ -602,11 +613,9 @@ void setup()
   }
 }
 
-// ── Loop ──────────
 
 void loop()
 {
-  // 1. Maintain Displays & States in Lockdown
   if (lockdown)
   {
     digitalWrite(LED_PIN, HIGH);
@@ -620,7 +629,6 @@ void loop()
     while (Serial.available())
       sim.write(Serial.read());
 
-    // Keep SOS message on screen
     if (millis() - lastDisplayUpdate > 500)
     {
       updateDisplay();
@@ -629,14 +637,12 @@ void loop()
     return;
   }
 
-  // 2. Read Sensors
   readMPU();
   while (gpsSerial.available())
   {
     gps.encode(gpsSerial.read());
   }
 
-  // Optional: Also parse Serial commands (for PC testing without BLE)
   if (Serial.available())
   {
     String input = Serial.readStringUntil('\n');
@@ -647,7 +653,6 @@ void loop()
     }
   }
 
-  // 3. Fall Detection & Buttons
   bool rawPanic = (digitalRead(PANIC_BUTTON_PIN) == LOW);
   bool rawDeactivate = (digitalRead(DEACTIVATE_BUTTON_PIN) == LOW);
 
@@ -682,6 +687,13 @@ void loop()
     digitalWrite(LED_PIN, HIGH);
     digitalWrite(BUZZER_PIN, HIGH);
 
+        float currentLat = gps.location.isValid() ? gps.location.lat() : 0.0;
+        float currentLon = gps.location.isValid() ? gps.location.lng() : 0.0;
+        int currentSpeed = gps.speed.isValid() ? gps.speed.kmph() : 0;
+        Serial.println("Instant SOS Triggered! Sending to backend...");
+        sendDataToBackend(currentLat, currentLon, currentSpeed, true);
+        //
+
     updateDisplay(); 
   }
 
@@ -693,7 +705,15 @@ void loop()
       digitalWrite(BUZZER_PIN, LOW);
       digitalWrite(LED_PIN, LOW);
       Serial.println("Alert DEACTIVATED by user.");
-      updateDisplay(); // Force clear SOS screen
+
+            float currentLat = gps.location.isValid() ? gps.location.lat() : 0.0;
+            float currentLon = gps.location.isValid() ? gps.location.lng() : 0.0;
+            int currentSpeed = gps.speed.isValid() ? gps.speed.kmph() : 0;
+            Serial.println("Sending alert cancellation to backend.");
+            sendDataToBackend(currentLat, currentLon, currentSpeed, false);
+
+
+      updateDisplay();
     }
     else if (millis() - alertStartTime >= ALERT_DELAY_MS)
     {
@@ -734,14 +754,12 @@ void loop()
     }
   }
 
-  // 5. Update OLED (Non-blocking: max 2 times per second)
   if (millis() - lastDisplayUpdate > 500)
   {
     updateDisplay();
     lastDisplayUpdate = millis();
   }
 
-  // 6. BLE GPS Reporting
   if (millis() - lastBLEUpdate > 5000)
   {
     lastBLEUpdate = millis();
@@ -763,7 +781,18 @@ void loop()
     sendGPSData = false;
   }
 
-  // 7. Clean up buffers
+    if (millis() - lastGpsSendTime >= GPS_SEND_INTERVAL)
+    {
+      float currentLat = gps.location.isValid() ? gps.location.lat() : 0.0;
+      float currentLon = gps.location.isValid() ? gps.location.lng() : 0.0;
+      int currentSpeed = gps.speed.isValid() ? gps.speed.kmph() : 0;
+
+      Serial.println("Periodic 1-minute tracking update to backend...");
+      sendDataToBackend(currentLat, currentLon, currentSpeed, alertTriggered || lockdown);
+
+      lastGpsSendTime = millis();
+    }
+
   while (sim.available())
     Serial.write(sim.read());
   while (Serial.available())
