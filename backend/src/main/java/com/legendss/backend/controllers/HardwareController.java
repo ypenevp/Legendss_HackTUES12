@@ -16,7 +16,27 @@ public class HardwareController {
         this.wheelChairService = wheelChairService;
     }
 
-    @PostMapping("/update")
+//    @PostMapping("/update")
+//    public ResponseEntity<String> receiveHardwareData(
+//            @RequestHeader(value = "X-Device-Token", required = false) String tokenHeader,
+//            @RequestParam(value = "token", required = false) String tokenParam,
+//            @RequestBody WheelChair payload) {
+//
+//        String actualToken = tokenHeader != null ? tokenHeader : tokenParam;
+//
+//        if (actualToken == null || actualToken.isEmpty()) {
+//            return ResponseEntity.badRequest().body("Token requires");
+//        }
+//
+//        try {
+//            wheelChairService.updateFromHardware(actualToken, payload);
+//            return ResponseEntity.ok("Received");
+//        } catch (Exception e) {
+//            return ResponseEntity.status(401).body("Invalid Token");
+//        }
+
+
+    @PatchMapping("/update")
     public ResponseEntity<String> receiveHardwareData(
             @RequestHeader(value = "X-Device-Token", required = false) String tokenHeader,
             @RequestParam(value = "token", required = false) String tokenParam,
@@ -35,5 +55,6 @@ public class HardwareController {
             return ResponseEntity.status(401).body("Invalid Token");
         }
     }
+
 }
 
