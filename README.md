@@ -99,7 +99,11 @@ Base URL: `http://localhost:7070/api`
 | `GET`    | `/userprofile/getuserprofile/{id}` | Get a user profile by ID. |
 | `PATCH`  | `/userprofile/updateuserprofile/{id}` | Update a user profile by ID. |
 | `DELETE` | `/userprofile/deleteuserprofile/{id}` | Delete a user profile by ID. |
+
+---
 ## Schematic
+
+![Modules architecture](docx/images/modules.png)
 
 
 ---
