@@ -66,6 +66,11 @@ function handleMsg(e){
       routeLines.push(L.polyline(c,{color:'#22c55e',weight:5}).addTo(map));
       map.fitBounds(routeLines[1].getBounds(),{padding:[40,40]});
     }
+    if(msg.type==='restorePin'){
+      // Re-place the saved destination marker without firing a new 'pin' event
+      if(destMarker)map.removeLayer(destMarker);
+      destMarker=L.marker([msg.lat,msg.lng],{icon:destIcon}).addTo(map);
+    }
     if(msg.type==='reset'){
       if(destMarker){map.removeLayer(destMarker);destMarker=null;}
       routeLines.forEach(function(l){map.removeLayer(l)});routeLines=[];
@@ -89,6 +94,10 @@ export default function MapPage() {
   const [summary,     setSummary]  = useState(null);
   const [phase,       setPhase]    = useState('locating');
 
+  // Snapshot of the last completed route so an accidental map-tap doesn't destroy it
+  const [savedRoute,  setSavedRoute] = useState(null); // { destination, steps, summary, coords }
+  const [canResume,   setCanResume]  = useState(false);
+
   const slideIn = () => {
     panelAnim.setValue(0);
     Animated.spring(panelAnim, { toValue:1, useNativeDriver:true, tension:80, friction:12 }).start();
@@ -108,11 +117,39 @@ export default function MapPage() {
     try {
       const msg = JSON.parse(e.nativeEvent.data);
       if (msg.type === 'pin') {
+        // If we were navigating, snapshot the route so user can resume
+        if (phase === 'done' && steps.length > 0) {
+          setSavedRoute({ destination, steps, summary });
+          setCanResume(true);
+        } else {
+          // A brand-new pin discards any old saved route
+          setSavedRoute(null);
+          setCanResume(false);
+        }
         setDest({ latitude: msg.lat, longitude: msg.lng });
         setSteps([]); setSummary(null);
         setPhase('ready'); slideIn();
       }
     } catch {}
+  };
+
+  // ── Restore the saved route without re-fetching ───────────────
+  const resume = () => {
+    if (!savedRoute) return;
+    setDest(savedRoute.destination);
+    setSteps(savedRoute.steps);
+    setSummary(savedRoute.summary);
+    setCanResume(false);
+    setSavedRoute(null);
+    setPhase('done'); slideIn();
+    // Re-draw route + destination pin on the map
+    webViewRef.current?.postMessage(JSON.stringify({ type: 'route', coords: savedRoute.steps.__coords || [] }));
+    // Restore the saved destination pin position
+    webViewRef.current?.postMessage(JSON.stringify({
+      type: 'restorePin',
+      lat: savedRoute.destination.latitude,
+      lng: savedRoute.destination.longitude,
+    }));
   };
 
   const fetchRoute = async () => {
@@ -133,8 +170,13 @@ export default function MapPage() {
       const feature  = data.features[0];
       const coords   = feature.geometry.coordinates.map(([lng, lat]) => ({ latitude: lat, longitude: lng }));
       const allSteps = feature.properties.segments.flatMap((s) => s.steps);
+      // Tag coords onto steps so resume() can re-draw the polyline
+      allSteps.__coords = coords;
+
       setSteps(allSteps);
       setSummary({ distance: feature.properties.summary.distance, duration: feature.properties.summary.duration });
+      // Clear any previous resume snapshot — this is a fresh route now
+      setSavedRoute(null); setCanResume(false);
       setPhase('done'); slideIn();
       webViewRef.current?.postMessage(JSON.stringify({ type: 'route', coords }));
     } catch (err) {
@@ -144,6 +186,7 @@ export default function MapPage() {
 
   const reset = () => {
     setDest(null); setSteps([]); setSummary(null);
+    setSavedRoute(null); setCanResume(false);
     panelAnim.setValue(0); setPhase('pinning');
     webViewRef.current?.postMessage(JSON.stringify({ type: 'reset' }));
   };
@@ -190,14 +233,24 @@ export default function MapPage() {
           {phase === 'ready' && destination && (
             <>
               <View style={s.row}>
-                <View>
+                <View style={{ flex: 1 }}>
                   <Text style={s.title}>Where to?</Text>
                   <Text style={s.sub}>{destination.latitude.toFixed(5)}, {destination.longitude.toFixed(5)}</Text>
                 </View>
-                <TouchableOpacity onPress={reset} style={s.closeBtn}>
-                  <Text style={s.closeTxt}>✕</Text>
-                </TouchableOpacity>
+
+                <View style={s.headerActions}>
+                  {/* ← Resume: only shown after accidental tap during navigation */}
+                  {canResume && (
+                    <TouchableOpacity onPress={resume} style={s.resumeBtn}>
+                      <Text style={s.resumeTxt}>← Resume</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity onPress={reset} style={s.closeBtn}>
+                    <Text style={s.closeTxt}>✕</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
+
               <TouchableOpacity style={s.goBtn} onPress={fetchRoute} activeOpacity={0.85}>
                 {/* <Text style={s.goBtnIcon}></Text> */}
                 <Text style={s.goBtnTxt}>Get Wheelchair Route</Text>
@@ -273,11 +326,20 @@ const s = StyleSheet.create({
     shadowColor:'#000', shadowOffset:{width:0,height:-8},
     shadowOpacity:0.5, shadowRadius:16, elevation:20,
   },
-  row:      { flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start', marginBottom:14 },
+  row:           { flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start', marginBottom:14 },
+  headerActions: { flexDirection:'row', alignItems:'center', gap:8 },
   title:    { color:'#f9fafb', fontSize:18, fontWeight:'700' },
   sub:      { color:'#6b7280', fontSize:12, marginTop:2 },
   closeBtn: { paddingHorizontal:8, paddingVertical:4 },
   closeTxt: { color:'#6b7280', fontWeight:'600', fontSize:14 },
+
+  // Resume button
+  resumeBtn: {
+    backgroundColor:'rgba(34,197,94,0.15)',
+    borderWidth:1, borderColor:'rgba(34,197,94,0.4)',
+    borderRadius:20, paddingHorizontal:12, paddingVertical:5,
+  },
+  resumeTxt: { color:'#22c55e', fontWeight:'700', fontSize:13 },
 
   goBtn: {
     flexDirection:'row', alignItems:'center', justifyContent:'center',
