@@ -11,11 +11,10 @@ import {
 import { MaterialIcons, Feather, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import "../global.css";
-import TopNav from '../components/topNav.jsx';
-import BottomNav from '../components/bottomNav.jsx';
 import PersonalInfoModal from '../components/PersonalInfo.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useUser } from '../../context/UserContext.jsx';
+import { GetUserProfileDetails } from '../services/userDetails.js';
 
 const mockUser = {
     name: 'Borislav Stoinev',
@@ -349,6 +348,26 @@ export default function Settings({ navigation }) {
         navigation.navigate('Home');
     };
 
+    useEffect(() => {
+        const loadProfileImage = async () => {
+            if (!userDetails?.id) return;
+            
+            try {
+                const profileDetails = await GetUserProfileDetails(userDetails.id);
+                setProfileImage(profileDetails?.photoUrl || profileDetails?.photo || null);
+            } catch (error) {
+                console.error("Error fetching profile image:", error);
+                
+
+                if (userDetails?.photo) {
+                    setProfileImage(userDetails.photo);
+                }
+            }
+        };
+
+        loadProfileImage();
+    }, [userDetails, showPersonalInfo]);
+
 
     return (
         <View style={{ flex: 1, backgroundColor: '#f9fafb' }}>
@@ -380,27 +399,6 @@ export default function Settings({ navigation }) {
                                 borderColor: '#fff',
                             }}
                         />
-                        <TouchableOpacity
-                            style={{
-                                position: 'absolute',
-                                bottom: -2,
-                                right: -2,
-                                width: 36,
-                                height: 36,
-                                borderRadius: 18,
-                                backgroundColor: '#3b82f6',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                shadowColor: '#000',
-                                shadowOffset: { width: 0, height: 2 },
-                                shadowOpacity: 0.15,
-                                shadowRadius: 4,
-                                elevation: 4,
-                            }}
-                            onPress={pickImage}
-                        >
-                            <Ionicons name="camera" size={16} color="#fff" />
-                        </TouchableOpacity>
                     </View>
 
                     {/* User Info */}

@@ -7,39 +7,42 @@
 #include <MPU6050.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include "secrets.h" // Ensure this contains any needed Wi-Fi/API credentials if you use them
+#include "secrets.h"
+#include <WiFi.h>
+#include <HTTPClient.h>
 
-// ── OLED Display Setup ──────────
+//display
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
-
-// Navigation State
 bool navigationActive = false;
 String direction = "STRAIGHT";
 int distance_m = 0;
 unsigned long lastDisplayUpdate = 0;
-const int TIME_ZONE_OFFSET = 2; // +2 hours for EET (Bulgaria)
+const int TIME_ZONE_OFFSET = 2; 
 
-// ── Hardware Pins ──────────
+//UART gsm
 #define SIM_RX_PIN 16
 #define SIM_TX_PIN 17
 HardwareSerial sim(1);
 
+//UART gps
 #define GPS_RX_PIN 18
 #define GPS_TX_PIN 19
 HardwareSerial gpsSerial(2);
 TinyGPSPlus gps;
 
+//Panic button module setup
 #define PANIC_BUTTON_PIN 4
 #define DEACTIVATE_BUTTON_PIN 5
 #define LED_PIN 42
 #define BUZZER_PIN 2
 
+//I2C
 #define MPU_SDA_PIN 8
 #define MPU_SCL_PIN 9
 
-// ── MPU6050 & Fall Detection ──────────
+//MPU-6050
 const bool ENABLE_GYRO = true;
 MPU6050 mpu;
 bool mpuReady = false;
@@ -59,7 +62,7 @@ static int fallCounter = 0;
 float Ax = 0, Ay = 0, Az = 1;
 float Gx = 0, Gy = 0, Gz = 0;
 
-// ── BLE Setup ──────────
+
 #define SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
@@ -73,13 +76,12 @@ float targetLat = 0.0;
 float targetLon = 0.0;
 bool targetReceived = false;
 
-// ── SOS Logic ──────────
 String emergencyNumbers[] = {"+359897406640", "+359887265727"};
 int numEmergencyContacts = 2;
 
 bool alertTriggered = false;
 unsigned long alertStartTime = 0;
-const unsigned long ALERT_DELAY_MS = 10000; // countdown
+const unsigned long ALERT_DELAY_MS = 10000; // 10s cooldown
 
 bool simReady = false;
 bool lockdown = false;
@@ -90,12 +92,16 @@ const unsigned long DEBOUNCE_MS = 50;
 bool lastPanicState = HIGH;
 bool lastDeactivateState = HIGH;
 
-// ── OLED Functions ──────────
+unsigned long lastWiFiSend = 0;
+const unsigned long WIFI_SEND_INTERVAL = 5000;
+
+//////////////////////////////////////////////////////////////////////////////////////////
+//display manage functions
 
 void drawArrow(String dir)
 {
   int cx = 64;
-  int cy = 34; // Centered vertically in the middle area
+  int cy = 34;
 
   if (dir == "STRAIGHT")
   {
@@ -127,7 +133,6 @@ void drawClock()
 
   if (gps.time.isValid() && gps.date.isValid())
   {
-    // Calculate local time
     int hour = gps.time.hour() + TIME_ZONE_OFFSET;
     if (hour >= 24)
       hour -= 24;
@@ -147,12 +152,10 @@ void drawClock()
     dateStr = String(dBuffer);
   }
 
-  // Display Date small at top right
   display.setTextSize(1);
   display.setCursor(35, 5);
   display.print(dateStr);
 
-  // Display Time large in center
   display.setTextSize(3);
   display.setCursor(20, 25);
   display.print(timeStr);
@@ -165,14 +168,12 @@ void updateDisplay()
 
   if (lockdown || alertTriggered)
   {
-    // --- SOS MODE ---
     display.setTextSize(2);
     display.setCursor(10, 25);
     display.print("SOS ALERT!");
   }
   else if (navigationActive)
   {
-    // --- NAVIGATION MODE ---
     display.setTextSize(1);
     display.setCursor(0, 0);
     display.print(direction);
@@ -186,14 +187,13 @@ void updateDisplay()
   }
   else
   {
-    // --- CLOCK MODE ---
     drawClock();
   }
 
   display.display();
 }
 
-// ── BLE & Parsing Functions ──────────
+//////////////////////////////////////////////////////////////////////////////////////////
 
 void parseCoordinates(String data)
 {
@@ -216,7 +216,6 @@ void parseCoordinates(String data)
 
 void parseNavigation(String data)
 {
-  // Example format expected: "NAV:LEFT,150"
   if (data.startsWith("NAV:"))
   {
     String payload = data.substring(4);
@@ -267,7 +266,8 @@ class MyServerCallbacks : public BLEServerCallbacks
   void onDisconnect(BLEServer *pServer) { deviceConnected = false; }
 };
 
-// ── Core Helper Functions (MPU, SIM, etc.) ──────────
+//////////////////////////////////////////////////////////////////////////////////////////
+//MPU-6050 control
 
 void readMPU()
 {
@@ -328,6 +328,8 @@ bool checkFallDetection()
   return (fallCounter >= FALL_CONFIRM_COUNT);
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
+
 String sendATRead(const char *cmd, int timeout = 2000)
 {
   while (sim.available())
@@ -371,6 +373,9 @@ void resetModule()
     sim.read();
   }
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////
+//Sim checks
 
 bool checkModuleAlive()
 {
@@ -451,6 +456,8 @@ bool checkNetwork()
   return false;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
+
 bool sendSMS(String number, String message)
 {
   if (!simReady)
@@ -503,6 +510,7 @@ bool sendSMS(String number, String message)
   return false;
 }
 
+//panic button indication LED and BUZZ
 void alertSignalBlinkLED()
 {
   static unsigned long lastToggle = 0;
@@ -516,21 +524,87 @@ void alertSignalBlinkLED()
   }
 }
 
-// ── Setup ──────────
+void sendToBackend(bool panicStatus)
+{
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    Serial.println("WiFi not connected, skipping backend send.");
+    return;
+  }
+
+  HTTPClient http;
+  http.begin(BACKEND_URL);
+  http.addHeader("Content-Type", "application/json");
+
+  String payload = "{";
+
+  // GPS
+  if (gps.location.isValid())
+  {
+    payload += "\"gpsCoordinate\":\"";
+    payload += String(gps.location.lat(), 6) + " " + String(gps.location.lng(), 6);
+    payload += "\",";
+  }
+  else
+  {
+    payload += "\"gpsCoordinate\":null,";
+  }
+
+  // Speed
+  if (gps.speed.isValid())
+  {
+    payload += "\"speed\":" + String(gps.speed.kmph(), 1) + ",";
+  }
+  else
+  {
+    payload += "\"speed\":0,";
+  }
+
+  // Token
+  payload += "\"token\":\"" + String(DEVICE_TOKEN) + "\",";
+
+  // Panic status (true / false text for JSON)
+  payload += "\"panicStatus\":";
+  payload += (panicStatus ? "true" : "false"); 
+
+  payload += "}";
+
+  Serial.println("Sending to backend:");
+  Serial.println(payload);
+
+  int httpResponseCode = http.sendRequest("PATCH", payload);
+
+  Serial.println("Backend response code: " + String(httpResponseCode));
+
+  String responseBody = "";
+  if (httpResponseCode > 0)
+  {
+    responseBody = http.getString();
+    Serial.println("Backend response body:");
+    Serial.println(responseBody);
+  }
+  else
+  {
+    Serial.println("Error sending request. Code: " + String(httpResponseCode));
+  }
+
+  http.end();
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////
 
 void setup()
 {
   Serial.begin(115200);
   delay(1000);
 
-  // Init I2C for both MPU6050 and OLED Display
   Wire.begin(MPU_SDA_PIN, MPU_SCL_PIN);
   Wire.setClock(100000);
 
-  // Init Display
+  //setup display
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
   {
-    Serial.println(F("SSD1306 allocation failed"));
+    Serial.println(F("SSD1306 allocation failed!"));
   }
   else
   {
@@ -538,13 +612,16 @@ void setup()
     display.display();
   }
 
+  //setup panic button indication
   pinMode(PANIC_BUTTON_PIN, INPUT_PULLUP);
   pinMode(DEACTIVATE_BUTTON_PIN, INPUT_PULLUP);
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
+
   digitalWrite(LED_PIN, LOW);
   digitalWrite(BUZZER_PIN, LOW);
 
+// setuo MPU-6050
   Serial.println("\n>> Initializing MPU6050...");
   if (ENABLE_GYRO)
   {
@@ -552,7 +629,7 @@ void setup()
     mpu.initialize();
     delay(500);
     uint8_t id = mpu.getDeviceID();
-    if (id == 0x34 || id == 0x38)
+    if (id == 0x34 || id == 0x38) // !!!
     {
       Serial.printf("   MPU6050 OK (id=0x%02X)\n", id);
       mpu.setSleepEnabled(false);
@@ -566,13 +643,13 @@ void setup()
   }
   else
   {
-    Serial.println("   MPU6050 skipped via software flag.");
+    Serial.println("   MPU6050 skipped flag.");
     mpuReady = false;
   }
 
+
   gpsSerial.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
 
-  // BLE Setup
   BLEDevice::init("Wheelchair-Nav");
   BLEServer *pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
@@ -584,7 +661,7 @@ void setup()
   BLEDevice::getAdvertising()->start();
   Serial.println("BLE Started.");
 
-  // SIM Setup
+  //setup GSM
   Serial.println("\n>> SIM800L Init Start");
   sim.begin(9600, SERIAL_8N1, SIM_RX_PIN, SIM_TX_PIN);
   delay(2000);
@@ -600,13 +677,34 @@ void setup()
     simReady = true;
     Serial.println("\n>> SIM800L Ready.");
   }
+
+  //setup Wi-Fi
+  Serial.println("\n>> Connecting to WiFi..");
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+  int wifiRetries = 0;
+  while (WiFi.status() != WL_CONNECTED && wifiRetries < 15) // try 15 times
+  {
+    delay(500);
+    Serial.print(".");
+    wifiRetries++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    Serial.println("\nWiFi connected!!!");
+    Serial.println(WiFi.localIP());
+  }
+  else
+  {
+    Serial.println("\nWiFi FAILED!");
+  }
 }
 
-// ── Loop ──────────
+//////////////////////////////////////////////////////////////////////////////////////////
 
 void loop()
 {
-  // 1. Maintain Displays & States in Lockdown
   if (lockdown)
   {
     digitalWrite(LED_PIN, HIGH);
@@ -620,23 +718,26 @@ void loop()
     while (Serial.available())
       sim.write(Serial.read());
 
-    // Keep SOS message on screen
     if (millis() - lastDisplayUpdate > 500)
     {
       updateDisplay();
       lastDisplayUpdate = millis();
     }
+    
+    if (millis() - lastWiFiSend > WIFI_SEND_INTERVAL)
+    {
+      lastWiFiSend = millis();
+      sendToBackend(true); 
+    }
     return;
   }
 
-  // 2. Read Sensors
   readMPU();
   while (gpsSerial.available())
   {
     gps.encode(gpsSerial.read());
   }
 
-  // Optional: Also parse Serial commands (for PC testing without BLE)
   if (Serial.available())
   {
     String input = Serial.readStringUntil('\n');
@@ -647,7 +748,6 @@ void loop()
     }
   }
 
-  // 3. Fall Detection & Buttons
   bool rawPanic = (digitalRead(PANIC_BUTTON_PIN) == LOW);
   bool rawDeactivate = (digitalRead(DEACTIVATE_BUTTON_PIN) == LOW);
 
@@ -667,7 +767,6 @@ void loop()
 
   bool fallDetected = checkFallDetection();
 
-  // 4. Alert Logic
   if ((panicPressed || fallDetected) && !alertTriggered)
   {
     alertTriggered = true;
@@ -682,7 +781,8 @@ void loop()
     digitalWrite(LED_PIN, HIGH);
     digitalWrite(BUZZER_PIN, HIGH);
 
-    updateDisplay(); 
+    updateDisplay();
+    sendToBackend(true); 
   }
 
   if (alertTriggered)
@@ -693,7 +793,7 @@ void loop()
       digitalWrite(BUZZER_PIN, LOW);
       digitalWrite(LED_PIN, LOW);
       Serial.println("Alert DEACTIVATED by user.");
-      updateDisplay(); // Force clear SOS screen
+      sendToBackend(false); 
     }
     else if (millis() - alertStartTime >= ALERT_DELAY_MS)
     {
@@ -726,7 +826,7 @@ void loop()
       }
 
       alertTriggered = false;
-      lockdown = true;
+      lockdown = true; 
     }
     else
     {
@@ -734,18 +834,22 @@ void loop()
     }
   }
 
-  // 5. Update OLED (Non-blocking: max 2 times per second)
   if (millis() - lastDisplayUpdate > 500)
   {
     updateDisplay();
     lastDisplayUpdate = millis();
   }
 
-  // 6. BLE GPS Reporting
   if (millis() - lastBLEUpdate > 5000)
   {
     lastBLEUpdate = millis();
     sendGPSData = true;
+  }
+
+  if (millis() - lastWiFiSend > WIFI_SEND_INTERVAL)
+  {
+    lastWiFiSend = millis();
+    sendToBackend(alertTriggered); 
   }
 
   if (deviceConnected && sendGPSData)
@@ -763,7 +867,6 @@ void loop()
     sendGPSData = false;
   }
 
-  // 7. Clean up buffers
   while (sim.available())
     Serial.write(sim.read());
   while (Serial.available())

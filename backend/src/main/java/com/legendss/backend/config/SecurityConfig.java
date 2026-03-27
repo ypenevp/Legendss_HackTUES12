@@ -27,11 +27,17 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/register", "/api/auth/verify", "/api/auth/login").permitAll()
                         .requestMatchers("/api/auth/me").authenticated()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
+
                         .requestMatchers("/api/relationships/**").hasAnyRole("USER", "ADMIN")
                         .requestMatchers("/api/user/**").hasAnyRole("USER", "ADMIN", "RELATIVE", "CARETAKER")
                         .requestMatchers("/api/caretakers/**").hasRole("USER")
-                        .requestMatchers("/api/wheelchairs/wheelchair/add", "/api/wheelchairs/wheelchair/delete/**", "/api/wheelchairs/wheelchair/get/**", "/api/wheelchairs/wheelchair/get/all").hasRole("USER")
+
+                        .requestMatchers("/api/wheelchairs/wheelchair/add", "/api/wheelchairs/wheelchair/delete/**").hasRole("USER")
+                        .requestMatchers("/api/wheelchairs/wheelchair/get/**").hasAnyRole("USER", "RELATIVE", "CARETAKER")
                         .requestMatchers("/api/wheelchairs/wheelchair/update/**").permitAll()
+
+                        .requestMatchers("/api/hardware/**").permitAll()
+
 
                         .anyRequest().authenticated()
                 )
