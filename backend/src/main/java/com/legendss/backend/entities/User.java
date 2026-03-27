@@ -1,6 +1,7 @@
 package com.legendss.backend.entities;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.legendss.backend.entities.Caretaker;
 import com.legendss.backend.entities.ROLE;
 import jakarta.persistence.*;
@@ -9,6 +10,7 @@ import lombok.Setter;
 
 import java.util.List;
 
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Entity
 @Table(name = "users")
 @Getter
@@ -26,6 +28,7 @@ public class User {
     private String username;
 
     @Column(nullable = false)
+    @JsonIgnore
     private String password;
 
     @Column

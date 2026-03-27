@@ -20,12 +20,10 @@ public class UserProfileService {
     }
 
     public UserProfile getUserProfile(Long id) {
-        Optional<UserProfile> userProfileToGet = this.userProfileRepository.findById(id);
-        if(userProfileToGet.isEmpty()){
-            return null;
-        }
-        return userProfileToGet.get();
+//        Optional<UserProfile> userProfileToGet = this.userProfileRepository.findById(id);
+        return this.userProfileRepository.findByUserId(id).orElse(null);
     }
+
     public UserProfile updateUserProfile(UserProfile userProfile){
         UserProfile userProfileToUpdate = this.getUserProfile(userProfile.getId());
         if(userProfileToUpdate == null){
