@@ -131,4 +131,50 @@ public class WheelChairService {
         throw new RuntimeException("Access denied: you are not related to this WheelChair");
     }
 
+    public WheelChair getWheelChairByUserIdSecurely(Long userId, String requesterEmail) {
+        WheelChair wheelChair = this.wheelChairRepository.findByUserId(userId)
+                .orElseThrow(() -> new RuntimeException("WheelChair not found for this user"));
+
+        User owner = wheelChair.getUser();
+
+        if (owner.getEmail().equals(requesterEmail)) {
+            return wheelChair;
+        }
+
+        boolean isRelative = owner.getRelatives() != null && owner.getRelatives().stream()
+                .anyMatch(u -> u.getEmail().equals(requesterEmail));
+
+        if (isRelative) {
+            return wheelChair;
+        }
+
+        boolean isCaretaker = owner.getCaretakers() != null && owner.getCaretakers().stream()
+                .anyMatch(u -> u.getEmail().equals(requesterEmail));
+
+        if (isCaretaker) {
+            return wheelChair;
+        }
+
+        throw new RuntimeException("Access denied: you are not related to this WheelChair");
+    }
+
+    public List<WheelChair> getMyAssociatedWheelChairs(String requesterEmail) {
+        return this.wheelChairRepository.findAll().stream().filter(wc -> {
+            User owner = wc.getUser();
+            if (owner.getEmail().equals(requesterEmail)) {
+                return true;
+            }
+
+            boolean isRelative = owner.getRelatives() != null && owner.getRelatives().stream()
+                    .anyMatch(u -> u.getEmail().equals(requesterEmail));
+            if (isRelative) {
+                return true;
+            }
+
+            boolean isCaretaker = owner.getCaretakers() != null && owner.getCaretakers().stream()
+                    .anyMatch(u -> u.getEmail().equals(requesterEmail));
+
+            return isCaretaker;
+        }).toList();
+    }
 }
