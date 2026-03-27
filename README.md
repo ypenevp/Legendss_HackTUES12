@@ -130,7 +130,7 @@ Base URL: `http://localhost:7070/api`
 | Layer | Technology |
 |-------|-----------|
 | **Firmware** | C++ (Arduino framework), ESP32 S3 |
-| **Sensors** | NEO-6M GPS, SIM800L GSM, MPU6050 |
+| **Sensors** | NEO-6M GPS, SIM800L GSM, MPU6050, VL53L0X |
 | **Display** | SSD1306 OLED display |
 | **Backend** | Spring Boot |
 | **Database** | PostgreSQL |
