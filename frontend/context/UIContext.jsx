@@ -3,14 +3,16 @@ import React, { createContext, useContext, useState } from 'react';
 const UIContext = createContext(null);
 
 export function UIProvider({ children }) {
-    const [modal, setModal] = useState(null); 
+    const [modal, setModal] = useState(null);
 
     const openLogin  = () => setModal('login');
     const openSignup = () => setModal('signup');
+    const openVerify = () => setModal('verify');
+    const openSuccess = () => setModal('success');``
     const closeModal = () => setModal(null);
 
     return (
-        <UIContext.Provider value={{ modal, openLogin, openSignup, closeModal }}>
+        <UIContext.Provider value={{ modal, openLogin, openSignup, openVerify, openSuccess, closeModal }}>
             {children}
         </UIContext.Provider>
     );

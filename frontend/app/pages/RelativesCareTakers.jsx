@@ -46,9 +46,9 @@ export default function RelativesCareTakers() {
                 <Text className="font-bold text-blue-500 text-4xl mb-4">Relatives Add</Text>
                 
                 <TextInput 
-                    placeholder="Relative's Email" 
+                    placeholder="Relative's Email"
                     value={relativeEmail}
-                    onChangeText={setRelativeEmail} 
+                    onChangeText={setRelativeEmail}
                     style={{ borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 10, marginBottom: 12 }} 
                     keyboardType="email-address"
                     autoCapitalize="none"

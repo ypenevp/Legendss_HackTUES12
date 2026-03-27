@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Text, View, TextInput, TouchableOpacity } from "react-native";
+import { Text, View, TextInput, TouchableOpacity, ScrollView } from "react-native";
 import { handleVerify } from "../services/auth";
 
 const BLUE = '#2563eb';
@@ -28,7 +28,10 @@ export default function VerifyCode({ onSuccess }) {
     };
 
     return (
-        <View style={{ width: "100%", alignItems: "center", justifyContent: "center" }}>
+        <ScrollView contentContainerStyle={{
+            flexGrow: 1, justifyContent: "center", alignItems: "center",
+            padding: 24
+        }} showsVerticalScrollIndicator={false}>
             <View style={{
                 width: 64, height: 64, borderRadius: 32, backgroundColor: BLUE_LIGHT,
                 alignItems: 'center', justifyContent: 'center', marginBottom: 20
@@ -87,6 +90,6 @@ export default function VerifyCode({ onSuccess }) {
                     {loading ? "Verifying..." : "Verify"}
                 </Text>
             </TouchableOpacity>
-        </View>
+        </ScrollView>
     );
 }
