@@ -46,9 +46,11 @@ public class WheelChairController {
     }
 
     @GetMapping("/wheelchair/get/{id}")
-    public WheelChair getWheelChair(@PathVariable Long id) {
-        return this.wheelChairService.getWheelChair(id);
+    public WheelChair getWheelChair(@PathVariable Long id, Authentication authentication) {
+        String requesterEmail = authentication.getName();
+        return this.wheelChairService.getWheelChairSecurely(id, requesterEmail);
     }
+
 
     @PatchMapping("/wheelchair/update/{id}")
     public WheelChair updateWheelChair(@PathVariable Long id, @RequestBody WheelChair wheelChair) {
