@@ -1,47 +1,39 @@
 import { API_URL } from '@env'
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-export const postWheelChair = async ({speed, GPScoordinates}) => {
+export const postWheelChair = async () => {
     try {
         const token = await AsyncStorage.getItem("access");
 
-        if(!token){
-            console.log("Error getting token");
+        if (!token) {
             throw new Error("No authentication token found");
         }
 
-        const payload = {
-            gpsCoordinate: GPScoordinates, // Java expects 'gpsCoordinate'
-            speed: parseInt(speed),        // Ensure speed is a number
-            panicStatus: false             // Default value
-        };
-
-        console.log("Sending payload:", JSON.stringify(payload));
-
-        const response = await fetch(`${API_URL}/wheelchair/addwheelchair`, {
+        const response = await fetch(`${API_URL}/api/wheelchairs/wheelchair/add`, {
             method: "POST",
             headers: {
                 "Authorization": `Bearer ${token}`,
-                "Content-Type": "application/json"
             },
-            body: JSON.stringify(payload)
         });
 
-        if (response.ok) {
-            const data = await response.json();
-            console.log("Wheelchair added successfully");
-            return data;
-        } else {
+        console.log("POST status:", response.status);
+
+        if (!response.ok) {
             const errorText = await response.text();
-            console.error("Server response:", response.status, errorText);
-            throw new Error(`Failed to create update: ${response.status} - ${errorText}`);
+            console.error("POST error:", errorText);
+            throw new Error(errorText);
         }
 
+        const data = await response.json(); // 👈 ВАЖНО
+        console.log("Created wheelchair:", data);
+
+        return data;
+
     } catch (error) {
-        console.error("Error posting a new wheelchair", error);
+        console.error("POST wheelchair error:", error);
         throw error;
     }
-}
+};
 
 export const getAllWheelChair = async() => {
     try {
@@ -52,7 +44,7 @@ export const getAllWheelChair = async() => {
             return [];
         }
 
-        const response = await fetch(`${API_URL}/wheelchair/getallwheelchair`, {
+        const response = await fetch(`${API_URL}/api/wheelchairs/wheelchair/my/associated`, {
             method: "GET",
             headers: {
                 "Authorization": `Bearer ${token}`,
