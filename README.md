@@ -119,6 +119,8 @@ Base URL: `http://localhost:7070/api`
 ## Schematic
 
 ![Modules architecture](docx/images/modules.png)
+---
+![Modules architecture](docx/images/logicSheme.png)
 
 
 ---
