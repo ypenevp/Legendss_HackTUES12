@@ -10,21 +10,47 @@ import "../global.css";
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const ORS_API_KEY = process.env.EXPO_PUBLIC_ORS_API_KEY;
 
+// Simple OLED-friendly labels — no prose directions
 const STEP_LABEL = {
-  0: 'LEFT', 1: 'RIGHT', 2: 'SHARP LEFT', 3: 'SHARP RIGHT',
-  4: 'SLIGHT LEFT', 5: 'SLIGHT RIGHT', 6: 'STRAIGHT',
-  7: 'ROUNDABOUT', 8: 'EXIT ROUNDABOUT', 10: 'U-TURN',
-  11: 'ARRIVE', 12: 'DEPART',
+  0: 'LEFT',        1: 'RIGHT',         2: 'SHARP LEFT',
+  3: 'SHARP RIGHT', 4: 'SLIGHT LEFT',   5: 'SLIGHT RIGHT',
+  6: 'STRAIGHT',    7: 'ROUNDABOUT',    8: 'EXIT ROUNDABOUT',
+  10: 'U-TURN',     11: 'ARRIVE',       12: 'DEPART',
 };
 const STEP_ARROW = {
   0: '↰', 1: '↱', 2: '↰', 3: '↱', 4: '↖', 5: '↗',
   6: '↑', 7: '⟳', 8: '⟳', 10: '↩', 11: '⚑', 12: '●',
 };
 
+const ARRIVE_RADIUS   = 10;    // metres — destination reached
+const OFF_COURSE_DIST = 20;    // metres from route → reroute (was 40)
+const REROUTE_COOLDOWN = 15000; // ms minimum between reroutes
+const WAYPOINT_RADIUS = 25;    // metres — advance to next step
+
 function formatDist(m) {
   return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
 }
 
+function formatETA(seconds) {
+  if (seconds == null) return null;
+  const m = Math.round(seconds / 60);
+  if (m < 1)  return '< 1 min';
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60), rem = m % 60;
+  return rem > 0 ? `${h}h ${rem}m` : `${h}h`;
+}
+
+function haversine(a, b) {
+  const R = 6371000;
+  const φ1 = (a.latitude  * Math.PI) / 180;
+  const φ2 = (b.latitude  * Math.PI) / 180;
+  const Δφ = ((b.latitude  - a.latitude)  * Math.PI) / 180;
+  const Δλ = ((b.longitude - a.longitude) * Math.PI) / 180;
+  const s  = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+}
+
+// ── Leaflet map HTML ──────────────────────────────────────────────
 function buildMapHTML(lat, lng) {
   return `<!DOCTYPE html>
 <html>
@@ -36,6 +62,8 @@ function buildMapHTML(lat, lng) {
   *{margin:0;padding:0;box-sizing:border-box}
   html,body,#map{width:100%;height:100%}
   .leaflet-control-attribution{display:none}
+  @keyframes pulse{0%{transform:scale(1);opacity:1}50%{transform:scale(1.5);opacity:0.5}100%{transform:scale(1);opacity:1}}
+  .user-dot{animation:pulse 2s infinite}
 </style>
 </head>
 <body>
@@ -44,8 +72,8 @@ function buildMapHTML(lat, lng) {
 var map=L.map('map',{zoomControl:true}).setView([${lat},${lng}],15);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
 
-var userIcon=L.divIcon({className:'',html:'<div style="width:16px;height:16px;border-radius:50%;background:#3b82f6;border:3px solid #fff;box-shadow:0 0 6px rgba(0,0,0,.4)"></div>',iconSize:[16,16],iconAnchor:[8,8]});
-L.marker([${lat},${lng}],{icon:userIcon}).addTo(map);
+var userIcon=L.divIcon({className:'',html:'<div class="user-dot" style="width:16px;height:16px;border-radius:50%;background:#3b82f6;border:3px solid #fff;box-shadow:0 0 6px rgba(0,0,0,.4)"></div>',iconSize:[16,16],iconAnchor:[8,8]});
+var userMarker=L.marker([${lat},${lng}],{icon:userIcon}).addTo(map);
 
 var destIcon=L.divIcon({className:'',html:'<div style="width:22px;height:22px;border-radius:50% 50% 50% 0;background:#22c55e;border:3px solid #fff;box-shadow:0 0 8px rgba(0,0,0,.4);transform:rotate(-45deg)"></div>',iconSize:[22,22],iconAnchor:[11,22]});
 var destMarker=null,routeLines=[];
@@ -59,15 +87,17 @@ map.on('click',function(e){
 function handleMsg(e){
   try{
     var msg=JSON.parse(e.data);
-    if(msg.type==='route'){
+    if(msg.type==='route'||msg.type==='trimRoute'){
       routeLines.forEach(function(l){map.removeLayer(l)});routeLines=[];
       var c=msg.coords.map(function(p){return[p.latitude,p.longitude]});
-      routeLines.push(L.polyline(c,{color:'rgba(0,0,0,.2)',weight:8}).addTo(map));
-      routeLines.push(L.polyline(c,{color:'#22c55e',weight:5}).addTo(map));
-      map.fitBounds(routeLines[1].getBounds(),{padding:[40,40]});
+      if(c.length>1){
+        routeLines.push(L.polyline(c,{color:'rgba(0,0,0,.15)',weight:8}).addTo(map));
+        routeLines.push(L.polyline(c,{color:'#22c55e',weight:5}).addTo(map));
+        if(msg.type==='route')map.fitBounds(routeLines[1].getBounds(),{padding:[40,40]});
+      }
     }
+    if(msg.type==='userPos'){userMarker.setLatLng([msg.lat,msg.lng]);}
     if(msg.type==='restorePin'){
-      // Re-place the saved destination marker without firing a new 'pin' event
       if(destMarker)map.removeLayer(destMarker);
       destMarker=L.marker([msg.lat,msg.lng],{icon:destIcon}).addTo(map);
     }
@@ -84,25 +114,41 @@ window.addEventListener('message',handleMsg);
 </html>`;
 }
 
+// ── Component ─────────────────────────────────────────────────────
 export default function MapPage() {
-  const webViewRef = useRef(null);
-  const panelAnim  = useRef(new Animated.Value(0)).current;
+  const webViewRef     = useRef(null);
+  const panelAnim      = useRef(new Animated.Value(0)).current;
+  const stepListRef    = useRef(null);
+  const watcherRef     = useRef(null);
+  const routeCoordsRef = useRef([]);
+  const destRef        = useRef(null);
+  const stepsRef       = useRef([]);      // nav-only steps (DEPART filtered out)
+  const lastRerouteRef = useRef(0);
+  const isReroutingRef = useRef(false);
 
-  const [location,    setLocation] = useState(null);
-  const [destination, setDest]     = useState(null);
-  const [steps,       setSteps]    = useState([]);
-  const [summary,     setSummary]  = useState(null);
-  const [phase,       setPhase]    = useState('locating');
+  const [location,    setLocation]   = useState(null);
+  const [destination, setDest]       = useState(null);
+  const [steps,       setSteps]      = useState([]);   // nav-only steps
+  const [summary,     setSummary]    = useState(null); // { distance, duration }
+  const [phase,       setPhase]      = useState('locating');
+  const [activeStep,  setActiveStep] = useState(0);
+  const [distToNext,  setDistToNext] = useState(null);
+  const [rerouting,   setRerouting]  = useState(false);
 
-  // Snapshot of the last completed route so an accidental map-tap doesn't destroy it
-  const [savedRoute,  setSavedRoute] = useState(null); // { destination, steps, summary, coords }
-  const [canResume,   setCanResume]  = useState(false);
+  // Resume snapshot
+  const [savedRoute, setSavedRoute] = useState(null);
+  const [canResume,  setCanResume]  = useState(false);
+
+  // Keep refs in sync with state (avoids stale closures in watcher)
+  useEffect(() => { destRef.current  = destination; }, [destination]);
+  useEffect(() => { stepsRef.current = steps;        }, [steps]);
 
   const slideIn = () => {
     panelAnim.setValue(0);
     Animated.spring(panelAnim, { toValue:1, useNativeDriver:true, tension:80, friction:12 }).start();
   };
 
+  // ── Initial permission + GPS fix ──────────────────────────────
   useEffect(() => {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -111,55 +157,156 @@ export default function MapPage() {
       setLocation(loc.coords);
       setPhase('pinning');
     })();
+    return () => stopWatcher();
   }, []);
 
+  // ── Watcher ───────────────────────────────────────────────────
+  const stopWatcher = () => {
+    if (watcherRef.current) { watcherRef.current.remove(); watcherRef.current = null; }
+  };
+  const startWatcher = async () => {
+    stopWatcher();
+    watcherRef.current = await Location.watchPositionAsync(
+      { accuracy: Location.Accuracy.High, distanceInterval: 4, timeInterval: 2000 },
+      (pos) => onPositionUpdate(pos.coords),
+    );
+  };
+
+  // ── Navigation tick ───────────────────────────────────────────
+  const onPositionUpdate = (coords) => {
+    const pos       = { latitude: coords.latitude, longitude: coords.longitude };
+    const dest      = destRef.current;
+    const allCoords = routeCoordsRef.current;
+    const stepsSnap = stepsRef.current;
+
+    // Move user dot
+    webViewRef.current?.postMessage(JSON.stringify({ type:'userPos', lat:pos.latitude, lng:pos.longitude }));
+    if (!dest || allCoords.length === 0) return;
+
+    // 1. Arrival check
+    if (haversine(pos, dest) < ARRIVE_RADIUS) {
+      stopWatcher();
+      setPhase('arrived');
+      return;
+    }
+
+    // 2. Nearest point on route
+    let nearestIdx = 0, nearestDist = Infinity;
+    for (let i = 0; i < allCoords.length; i++) {
+      const d = haversine(pos, allCoords[i]);
+      if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
+    }
+
+    // 3. Off-course → silent reroute
+    const now = Date.now();
+    if (nearestDist > OFF_COURSE_DIST && !isReroutingRef.current && now - lastRerouteRef.current > REROUTE_COOLDOWN) {
+      lastRerouteRef.current = now;
+      rerouteSilent(pos, dest);
+      return;
+    }
+
+    // 4. Trim polyline
+    const remaining = allCoords.slice(nearestIdx);
+    if (remaining.length > 1) {
+      webViewRef.current?.postMessage(JSON.stringify({ type:'trimRoute', coords: remaining }));
+    }
+
+    // 5. Advance steps — never auto-advance to the ARRIVE step (type 11);
+    //    that is handled exclusively by the arrival check above.
+    setActiveStep(prev => {
+      let next = prev;
+      while (next < stepsSnap.length - 1) {
+        const step = stepsSnap[next];
+        if (step.type === 11) break;  // never auto-advance past ARRIVE
+        const endCoord = allCoords[step?.way_points?.[1]];
+        if (endCoord && haversine(pos, endCoord) < WAYPOINT_RADIUS) next++;
+        else break;
+      }
+      const endCoord = allCoords[stepsSnap[next]?.way_points?.[1]];
+      if (endCoord) setDistToNext(Math.round(haversine(pos, endCoord)));
+      if (next !== prev && stepListRef.current) {
+        stepListRef.current.scrollTo({ y: next * 68, animated: true });
+      }
+      return next;
+    });
+  };
+
+  // ── Silent reroute ────────────────────────────────────────────
+  const rerouteSilent = async (fromPos, toDest) => {
+    isReroutingRef.current = true;
+    setRerouting(true);
+    try {
+      const url =
+        `https://api.openrouteservice.org/v2/directions/wheelchair` +
+        `?api_key=${ORS_API_KEY}` +
+        `&start=${fromPos.longitude},${fromPos.latitude}` +
+        `&end=${toDest.longitude},${toDest.latitude}`;
+      const res  = await fetch(url, { headers: { Accept: 'application/geo+json' } });
+      const data = await res.json();
+      if (!res.ok || !data.features?.length) return;
+      const feature  = data.features[0];
+      const coords   = feature.geometry.coordinates.map(([lng, lat]) => ({ latitude: lat, longitude: lng }));
+      // Filter DEPART (type 12) from nav steps — same as fetchRoute
+      const allRaw = feature.properties.segments.flatMap((s) => s.steps).filter(s => s.type !== 12);
+      const navSteps = allRaw.filter((s, i) => !(s.type === 11 && i !== allRaw.length - 1));
+      routeCoordsRef.current = coords;
+      stepsRef.current = navSteps;
+      setSteps(navSteps);
+      setSummary({ distance: feature.properties.summary.distance, duration: feature.properties.summary.duration });
+      setActiveStep(0); setDistToNext(null);
+      webViewRef.current?.postMessage(JSON.stringify({ type:'route', coords }));
+      await startWatcher();
+    } catch (_) { /* stay on old route */ } finally {
+      isReroutingRef.current = false;
+      setRerouting(false);
+    }
+  };
+
+  // ── Map tap handler ───────────────────────────────────────────
   const onMessage = (e) => {
     try {
       const msg = JSON.parse(e.nativeEvent.data);
       if (msg.type === 'pin') {
-        // If we were navigating, snapshot the route so user can resume
-        if (phase === 'done' && steps.length > 0) {
-          setSavedRoute({ destination, steps, summary });
+        if ((phase === 'done' || phase === 'arrived') && stepsRef.current.length > 0) {
+          setSavedRoute({ destination: destRef.current, steps: stepsRef.current, summary, coords: routeCoordsRef.current });
           setCanResume(true);
+          stopWatcher();
         } else {
-          // A brand-new pin discards any old saved route
-          setSavedRoute(null);
-          setCanResume(false);
+          setSavedRoute(null); setCanResume(false);
         }
         setDest({ latitude: msg.lat, longitude: msg.lng });
-        setSteps([]); setSummary(null);
+        setSteps([]); setSummary(null); setActiveStep(0); setDistToNext(null);
         setPhase('ready'); slideIn();
       }
     } catch {}
   };
 
-  // ── Restore the saved route without re-fetching ───────────────
+  // ── Resume ────────────────────────────────────────────────────
   const resume = () => {
     if (!savedRoute) return;
     setDest(savedRoute.destination);
     setSteps(savedRoute.steps);
+    stepsRef.current = savedRoute.steps;
     setSummary(savedRoute.summary);
-    setCanResume(false);
-    setSavedRoute(null);
+    routeCoordsRef.current = savedRoute.coords;
+    setActiveStep(0); setCanResume(false); setSavedRoute(null);
     setPhase('done'); slideIn();
-    // Re-draw route + destination pin on the map
-    webViewRef.current?.postMessage(JSON.stringify({ type: 'route', coords: savedRoute.steps.__coords || [] }));
-    // Restore the saved destination pin position
-    webViewRef.current?.postMessage(JSON.stringify({
-      type: 'restorePin',
-      lat: savedRoute.destination.latitude,
-      lng: savedRoute.destination.longitude,
-    }));
+    webViewRef.current?.postMessage(JSON.stringify({ type:'route', coords: savedRoute.coords }));
+    webViewRef.current?.postMessage(JSON.stringify({ type:'restorePin', lat:savedRoute.destination.latitude, lng:savedRoute.destination.longitude }));
+    startWatcher();
   };
 
+  // ── Fetch route (always fresh GPS) ───────────────────────────
   const fetchRoute = async () => {
-    if (!location || !destination) return;
+    if (!destination) return;
     setPhase('routing');
     try {
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      setLocation(loc.coords);
       const url =
         `https://api.openrouteservice.org/v2/directions/wheelchair` +
         `?api_key=${ORS_API_KEY}` +
-        `&start=${location.longitude},${location.latitude}` +
+        `&start=${loc.coords.longitude},${loc.coords.latitude}` +
         `&end=${destination.longitude},${destination.latitude}`;
       const res  = await fetch(url, { headers: { Accept: 'application/geo+json' } });
       const data = await res.json();
@@ -167,30 +314,41 @@ export default function MapPage() {
         Alert.alert('No route found', data.error?.message || 'No wheelchair route available.');
         setPhase('ready'); return;
       }
-      const feature  = data.features[0];
-      const coords   = feature.geometry.coordinates.map(([lng, lat]) => ({ latitude: lat, longitude: lng }));
-      const allSteps = feature.properties.segments.flatMap((s) => s.steps);
-      // Tag coords onto steps so resume() can re-draw the polyline
-      allSteps.__coords = coords;
+      const feature = data.features[0];
+      const coords  = feature.geometry.coordinates.map(([lng, lat]) => ({ latitude: lat, longitude: lng }));
 
-      setSteps(allSteps);
+      // Filter out DEPART (type 12) — it has 0 distance and its end-waypoint
+      //    is right where you are, causing immediate advancement to ARRIVE on first tick.
+      const allRaw = feature.properties.segments.flatMap((s) => s.steps).filter(s => s.type !== 12);
+      const navSteps = allRaw.filter((s, i) => !(s.type === 11 && i !== allRaw.length - 1));
+
+      routeCoordsRef.current = coords;
+      stepsRef.current = navSteps;
+      setSteps(navSteps);
       setSummary({ distance: feature.properties.summary.distance, duration: feature.properties.summary.duration });
-      // Clear any previous resume snapshot — this is a fresh route now
+      setActiveStep(0); setDistToNext(null);
       setSavedRoute(null); setCanResume(false);
+      lastRerouteRef.current = 0;
       setPhase('done'); slideIn();
-      webViewRef.current?.postMessage(JSON.stringify({ type: 'route', coords }));
+      webViewRef.current?.postMessage(JSON.stringify({ type:'route', coords }));
+      startWatcher();
     } catch (err) {
       Alert.alert('Error', err.message); setPhase('ready');
     }
   };
 
+  // ── Full reset ────────────────────────────────────────────────
   const reset = () => {
+    stopWatcher();
     setDest(null); setSteps([]); setSummary(null);
+    setActiveStep(0); setDistToNext(null); setRerouting(false);
     setSavedRoute(null); setCanResume(false);
+    routeCoordsRef.current = []; stepsRef.current = [];
     panelAnim.setValue(0); setPhase('pinning');
-    webViewRef.current?.postMessage(JSON.stringify({ type: 'reset' }));
+    webViewRef.current?.postMessage(JSON.stringify({ type:'reset' }));
   };
 
+  // ─────────────────────────────────────────────────────────────
   return (
     <View style={s.root}>
 
@@ -202,18 +360,14 @@ export default function MapPage() {
           originWhitelist={['*']}
           source={{ html: buildMapHTML(location.latitude, location.longitude) }}
           onMessage={onMessage}
-          javaScriptEnabled
-          domStorageEnabled
-          startInLoadingState
+          javaScriptEnabled domStorageEnabled startInLoadingState
           renderLoading={() => (
-            <View style={s.placeholder}>
-              <ActivityIndicator size="large" color="#22c55e" />
-            </View>
+            <View style={s.placeholder}><ActivityIndicator size="large" color="#22c55e"/></View>
           )}
         />
       ) : (
         <View style={s.placeholder}>
-          <ActivityIndicator size="large" color="#22c55e" />
+          <ActivityIndicator size="large" color="#22c55e"/>
           <Text style={s.muted}>Locating you…</Text>
         </View>
       )}
@@ -225,6 +379,26 @@ export default function MapPage() {
         </View>
       )}
 
+      {/* REROUTING TOAST */}
+      {rerouting && (
+        <View style={s.rerouteToast} pointerEvents="none">
+          <ActivityIndicator size="small" color="#f59e0b" style={{marginRight:8}}/>
+          <Text style={s.rerouteTxt}>Rerouting…</Text>
+        </View>
+      )}
+
+      {/* ARRIVED OVERLAY */}
+      {phase === 'arrived' && (
+        <View style={s.arrivedOverlay}>
+          <Text style={s.arrivedEmoji}>🏁</Text>
+          <Text style={s.arrivedTitle}>You have arrived!</Text>
+          <Text style={s.arrivedSub}>You have reached your destination.</Text>
+          <TouchableOpacity style={s.arrivedBtn} onPress={reset}>
+            <Text style={s.arrivedBtnTxt}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* BOTTOM PANEL */}
       {(phase === 'ready' || phase === 'routing' || phase === 'done') && (
         <Animated.View style={[s.panel,{transform:[{translateY:panelAnim.interpolate({inputRange:[0,1],outputRange:[300,0]})}]}]}>
@@ -233,13 +407,11 @@ export default function MapPage() {
           {phase === 'ready' && destination && (
             <>
               <View style={s.row}>
-                <View style={{ flex: 1 }}>
+                <View style={{flex:1}}>
                   <Text style={s.title}>Where to?</Text>
                   <Text style={s.sub}>{destination.latitude.toFixed(5)}, {destination.longitude.toFixed(5)}</Text>
                 </View>
-
                 <View style={s.headerActions}>
-                  {/* ← Resume: only shown after accidental tap during navigation */}
                   {canResume && (
                     <TouchableOpacity onPress={resume} style={s.resumeBtn}>
                       <Text style={s.resumeTxt}>← Resume</Text>
@@ -250,9 +422,7 @@ export default function MapPage() {
                   </TouchableOpacity>
                 </View>
               </View>
-
               <TouchableOpacity style={s.goBtn} onPress={fetchRoute} activeOpacity={0.85}>
-                {/* <Text style={s.goBtnIcon}></Text> */}
                 <Text style={s.goBtnTxt}>Get Wheelchair Route</Text>
               </TouchableOpacity>
             </>
@@ -261,42 +431,70 @@ export default function MapPage() {
           {/* ROUTING */}
           {phase === 'routing' && (
             <View style={s.centered}>
-              <ActivityIndicator size="large" color="#22c55e" />
+              <ActivityIndicator size="large" color="#22c55e"/>
               <Text style={s.muted}>Finding accessible route…</Text>
             </View>
           )}
 
-          {/* DONE */}
+          {/* DONE — live directions */}
           {phase === 'done' && steps.length > 0 && (
             <>
-              <View style={s.row}>
-                <View>
-                  <Text style={s.title}>Directions</Text>
-                  {summary && (
-                    <Text style={s.sub}>{formatDist(summary.distance)}  ·  {Math.round(summary.duration / 60)} min</Text>
-                  )}
-                </View>
-                <TouchableOpacity onPress={reset} style={s.closeBtn}>
-                  <Text style={[s.closeTxt,{color:'#ef4444'}]}>✕ Reset</Text>
-                </TouchableOpacity>
-              </View>
-              <ScrollView style={s.list} showsVerticalScrollIndicator={false}
-                contentContainerStyle={{paddingBottom:12}}>
-                {steps.map((step, i) => (
-                  <View key={i} style={[s.stepRow, i===steps.length-1&&{borderBottomWidth:0}]}>
-                    <View style={[s.badge, step.type===11&&s.badgeArrive]}>
-                      <Text style={s.arrow}>{STEP_ARROW[step.type]??'→'}</Text>
-                    </View>
-                    <View style={s.stepMid}>
-                      <Text style={s.stepLabel}>{STEP_LABEL[step.type]??'CONTINUE'}</Text>
-                      <Text style={s.stepTxt} numberOfLines={2}>{step.instruction}</Text>
-                    </View>
-                    <View style={s.chip}>
-                      <Text style={s.chipTxt}>{formatDist(step.distance)}</Text>
-                    </View>
+              {/* Hero card: arrow + label + live distance */}
+              {steps[activeStep] && (
+                <View style={s.heroCard}>
+                  <Text style={s.heroArrow}>{STEP_ARROW[steps[activeStep].type] ?? '→'}</Text>
+                  <View style={s.heroMid}>
+                    <Text style={s.heroLabel}>
+                      {STEP_LABEL[steps[activeStep].type] ?? 'CONTINUE'}
+                    </Text>
                   </View>
-                ))}
+                  <View style={s.heroDistCol}>
+                    <Text style={s.heroDistNum}>
+                      {distToNext != null ? distToNext : Math.round(steps[activeStep].distance)}
+                    </Text>
+                    <Text style={s.heroDistUnit}>m</Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Step counter + ETA */}
+              <View style={s.dividerRow}>
+                <View style={s.divider}/>
+                <Text style={s.stepCount}>
+                  {activeStep + 1}/{steps.length}
+                  {summary ? `  ·  ${formatETA(summary.duration)}` : ''}
+                  {summary ? `  ·  ${formatDist(summary.distance)}` : ''}
+                </Text>
+                <View style={s.divider}/>
+              </View>
+
+              {/* Full step list */}
+              <ScrollView ref={stepListRef} style={s.list} showsVerticalScrollIndicator={false}
+                contentContainerStyle={{paddingBottom:8}}>
+                {steps.map((step, i) => {
+                  const isActive = i === activeStep;
+                  const isDone   = i < activeStep;
+                  return (
+                    <View key={i} style={[s.stepRow, isActive && s.stepRowActive, isDone && s.stepRowDone, i===steps.length-1&&{borderBottomWidth:0}]}>
+                      <View style={[s.badge, isActive && s.badgeActive, step.type===11 && s.badgeArrive]}>
+                        <Text style={[s.arrow, isDone && {opacity:0.3}]}>{STEP_ARROW[step.type]??'→'}</Text>
+                      </View>
+                      <View style={s.stepMid}>
+                        <Text style={[s.stepLabel, isDone && {color:'#374151'}, isActive && {color:'#22c55e'}]}>
+                          {STEP_LABEL[step.type] ?? 'CONTINUE'}
+                        </Text>
+                      </View>
+                      <View style={s.chip}>
+                        <Text style={[s.chipTxt, isDone && {color:'#374151'}]}>{formatDist(step.distance)}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
               </ScrollView>
+
+              <TouchableOpacity onPress={reset} style={s.resetBtn}>
+                <Text style={s.resetTxt}>✕  End Navigation</Text>
+              </TouchableOpacity>
             </>
           )}
         </Animated.View>
@@ -305,6 +503,7 @@ export default function MapPage() {
   );
 }
 
+// ── Styles ────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   root:        { flex:1, backgroundColor:'#0a0a0a' },
   map:         { flex:1 },
@@ -318,10 +517,29 @@ const s = StyleSheet.create({
   },
   hintText: { color:'#fff', fontSize:14, fontWeight:'600' },
 
+  rerouteToast: {
+    position:'absolute', top:52, alignSelf:'center',
+    flexDirection:'row', alignItems:'center',
+    backgroundColor:'rgba(10,10,10,0.88)', paddingHorizontal:16, paddingVertical:9,
+    borderRadius:30, borderWidth:1, borderColor:'rgba(245,158,11,0.4)',
+  },
+  rerouteTxt: { color:'#f59e0b', fontSize:13, fontWeight:'700' },
+
+  arrivedOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor:'rgba(10,10,10,0.92)',
+    alignItems:'center', justifyContent:'center', gap:12, zIndex:99,
+  },
+  arrivedEmoji: { fontSize:64 },
+  arrivedTitle: { color:'#f9fafb', fontSize:26, fontWeight:'800' },
+  arrivedSub:   { color:'#6b7280', fontSize:14 },
+  arrivedBtn:   { marginTop:8, backgroundColor:'#22c55e', paddingHorizontal:40, paddingVertical:14, borderRadius:14 },
+  arrivedBtnTxt:{ color:'#fff', fontWeight:'700', fontSize:16 },
+
   panel: {
     backgroundColor:'#111827', borderTopLeftRadius:22, borderTopRightRadius:22,
-    paddingHorizontal:20, paddingTop:16, paddingBottom:24,
-    maxHeight:SCREEN_HEIGHT*0.48, minHeight:300,
+    paddingHorizontal:20, paddingTop:16, paddingBottom:16,
+    maxHeight:SCREEN_HEIGHT*0.52, minHeight:500,
     borderTopWidth:1, borderColor:'rgba(255,255,255,0.06)',
     shadowColor:'#000', shadowOffset:{width:0,height:-8},
     shadowOpacity:0.5, shadowRadius:16, elevation:20,
@@ -333,36 +551,60 @@ const s = StyleSheet.create({
   closeBtn: { paddingHorizontal:8, paddingVertical:4 },
   closeTxt: { color:'#6b7280', fontWeight:'600', fontSize:14 },
 
-  // Resume button
   resumeBtn: {
-    backgroundColor:'rgba(34,197,94,0.15)',
-    borderWidth:1, borderColor:'rgba(34,197,94,0.4)',
-    borderRadius:20, paddingHorizontal:12, paddingVertical:5,
+    backgroundColor:'rgba(34,197,94,0.15)', borderWidth:1,
+    borderColor:'rgba(34,197,94,0.4)', borderRadius:20,
+    paddingHorizontal:12, paddingVertical:5,
   },
   resumeTxt: { color:'#22c55e', fontWeight:'700', fontSize:13 },
 
   goBtn: {
-    flexDirection:'row', alignItems:'center', justifyContent:'center',
-    backgroundColor:'#22c55e', borderRadius:14, paddingVertical:15, gap:10,
+    alignItems:'center', justifyContent:'center',
+    backgroundColor:'#22c55e', borderRadius:14, paddingVertical:15,
     shadowColor:'#22c55e', shadowOffset:{width:0,height:4},
     shadowOpacity:0.35, shadowRadius:10, elevation:8,
   },
-  goBtnIcon: { fontSize:20 },
-  goBtnTxt:  { color:'#fff', fontWeight:'700', fontSize:16 },
+  goBtnTxt: { color:'#fff', fontWeight:'700', fontSize:16 },
 
   centered: { alignItems:'center', justifyContent:'center', paddingVertical:24, gap:12 },
 
+  heroCard: {
+    flexDirection:'row', alignItems:'center',
+    backgroundColor:'#1f2937', borderRadius:16,
+    padding:14, marginBottom:10, gap:12,
+    borderWidth:1, borderColor:'rgba(34,197,94,0.25)',
+  },
+  heroArrow:   { fontSize:36, width:48, textAlign:'center' },
+  heroMid:     { flex:1 },
+  heroLabel:   { color:'#f9fafb', fontSize:22, fontWeight:'800', letterSpacing:1 },
+  heroDistCol: { alignItems:'flex-end' },
+  heroDistNum: { color:'#f9fafb', fontSize:26, fontWeight:'800' },
+  heroDistUnit:{ color:'#6b7280', fontSize:12, marginTop:-2 },
+
+  dividerRow: { flexDirection:'row', alignItems:'center', gap:8, marginBottom:8 },
+  divider:    { flex:1, height:1, backgroundColor:'rgba(255,255,255,0.06)' },
+  stepCount:  { color:'#4b5563', fontSize:11, fontWeight:'600' },
+
   list:    { flex:1 },
   stepRow: {
-    flexDirection:'row', alignItems:'center', paddingVertical:11,
+    flexDirection:'row', alignItems:'center', paddingVertical:10,
     borderBottomWidth:1, borderBottomColor:'rgba(255,255,255,0.05)', gap:12,
   },
-  badge:       { width:38,height:38,borderRadius:10,backgroundColor:'#1f2937',alignItems:'center',justifyContent:'center',flexShrink:0 },
+  stepRowActive: { opacity:1 },
+  stepRowDone:   { opacity:0.35 },
+
+  badge:       { width:36,height:36,borderRadius:10,backgroundColor:'#1f2937',alignItems:'center',justifyContent:'center',flexShrink:0 },
+  badgeActive: { backgroundColor:'rgba(34,197,94,0.2)', borderWidth:1, borderColor:'rgba(34,197,94,0.4)' },
   badgeArrive: { backgroundColor:'rgba(34,197,94,0.15)' },
-  arrow:       { fontSize:18 },
+  arrow:       { fontSize:17 },
   stepMid:     { flex:1 },
-  stepLabel:   { color:'#22c55e', fontSize:10, fontWeight:'800', letterSpacing:1.2, marginBottom:2 },
-  stepTxt:     { color:'#d1d5db', fontSize:13, lineHeight:18 },
+  stepLabel:   { color:'#9ca3af', fontSize:13, fontWeight:'700', letterSpacing:0.5 },
   chip:        { backgroundColor:'#1f2937', borderRadius:8, paddingHorizontal:8, paddingVertical:4, flexShrink:0 },
   chipTxt:     { color:'#9ca3af', fontSize:11, fontWeight:'700' },
+
+  resetBtn: {
+    marginTop:10, alignItems:'center', paddingVertical:10,
+    borderRadius:12, borderWidth:1, borderColor:'rgba(239,68,68,0.3)',
+  },
+  resetTxt: { color:'#ef4444', fontWeight:'700', fontSize:13 },
 });
