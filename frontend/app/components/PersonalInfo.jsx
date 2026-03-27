@@ -14,7 +14,8 @@ import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useUser } from '../../context/UserContext.jsx';
-import { GetUserDetails, EditUserDetails } from '../services/userDetails.js';
+import { EditUserDetails } from '../services/userDetails.js';
+import { GetUserProfileDetails } from '../services/userDetails.js';
 
 const SectionLabel = ({ icon, label }) => (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 20, marginBottom: 8 }}>
@@ -58,12 +59,28 @@ export default function PersonalInfoModal({ visible, onClose }) {
     const [telephone, setTelephone] = useState('');
     const [loading, setLoading] = useState(false);
 
-    useEffect(() => {
-        if (userDetails) {
-            setAddress(userDetails.address || '');
-            setTelephone(userDetails.telephone || '');
-            setProfileImage(userDetails.photo || null);
-        }
+useEffect(() => {
+        const fetchProfile = async () => {
+            if (!userDetails?.id || !visible) return;
+
+            try {
+                const profileDetails = await GetUserProfileDetails(userDetails.id);
+                
+                setAddress(profileDetails?.address || '');
+                setTelephone(profileDetails?.telephone || '');
+                setProfileImage(profileDetails?.photoUrl || profileDetails?.photo || null);
+            } catch (error) {
+                console.error("Error fetching profile details:", error);
+                
+                if (userDetails) {
+                    setAddress(userDetails.address || '');
+                    setTelephone(userDetails.telephone || '');
+                    setProfileImage(userDetails.photo || null);
+                }
+            }
+        };
+
+        fetchProfile();
     }, [userDetails, visible]);
 
     const pickImage = async () => {

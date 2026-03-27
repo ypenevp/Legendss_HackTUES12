@@ -82,3 +82,30 @@ export async function EditUserDetails(id, address, telephone, photo) {
         throw error;
     }
 }
+
+export async function GetUserProfileDetails( id ) {
+    try {
+        const token = await AsyncStorage.getItem("access");
+
+        const response = await fetch(`${API_URL}/userprofile/getuserprofile/${id}`, {
+            method: "GET",
+            headers: {
+                "Authorization": `Bearer ${token}`,
+            }
+        });
+
+        if (response.ok) {
+            
+            const data = await response.json();
+            console.log("data from GetUserProfileDetails:", data);
+            return data;
+            
+        } else {
+            throw new Error("Failed to fetch user data");
+        }
+
+    } catch(error) {
+        console.error("Error fetching user data:", error);
+        throw error;
+    }
+}
