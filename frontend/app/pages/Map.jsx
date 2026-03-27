@@ -415,8 +415,6 @@ export default function MapPage() {
 
   // ── Full reset ────────────────────────────────────────────────
   const reset = () => {
-    bleSend('IDLE');
-    bleLastSentRef.current = { dir: null, dist: -1 };
     stopWatcher();
     setDest(null); setSteps([]); setSummary(null);
     setActiveStep(0); setDistToNext(null); setRerouting(false);
