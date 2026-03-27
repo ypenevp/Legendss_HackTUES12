@@ -9,6 +9,7 @@ import "../global.css";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const ORS_API_KEY = process.env.EXPO_PUBLIC_ORS_API_KEY;
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:8080'; // Настройте с вашия локален IP адрес
 
 // Normalise step type → canonical label the ESP32 drawArrow understands
 const BLE_DIR = {
@@ -148,6 +149,32 @@ export default function MapPage() {
   const [savedRoute, setSavedRoute] = useState(null);
   const [canResume, setCanResume] = useState(false);
 
+  // Изпращане на данните към Spring Boot backend-a
+  const sendNavigationUpdate = async (dir, dist) => {
+    try {
+      await fetch(`${BACKEND_URL}/api/navigation/update/1`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          position: dir,
+          distance: dist
+        })
+      });
+    } catch (e) {
+      console.log('Error sending navigation update', e);
+    }
+  };
+
+  // Следи за промяна в текущата стъпка или разстоянието и ги праща към API-то
+  useEffect(() => {
+    if (steps.length > 0 && activeStep < steps.length) {
+      const step = steps[activeStep];
+      const dir = BLE_DIR[step.type] || 'STRAIGHT';
+      const dist = distToNext != null ? distToNext : Math.round(step.distance);
+      sendNavigationUpdate(dir, dist);
+    }
+  }, [activeStep, distToNext, steps]);
+  
   // Keep refs in sync with state (avoids stale closures in watcher)
   useEffect(() => { destRef.current = destination; }, [destination]);
   useEffect(() => { stepsRef.current = steps; }, [steps]);
@@ -195,8 +222,8 @@ export default function MapPage() {
     // 1. Arrival check
     if (haversine(pos, dest) < ARRIVE_RADIUS) {
       stopWatcher();
-      bleSend('IDLE');
-      bleLastSentRef.current = { dir: null, dist: -1 };
+      // Уведомяваме бекенда, че сме пристигнали
+      sendNavigationUpdate('ARRIVE', 0);
       setPhase('arrived');
       return;
     }
