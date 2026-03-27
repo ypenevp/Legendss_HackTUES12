@@ -15,51 +15,8 @@ const TopNav = ({ navigation, currentRoute }) => {
     const { openLogin, openSignup } = useUI();
     const isLoggedIn = !!authUser;
 
-    const allTabs = [
-        { name: 'Home', route: 'Home' },
-        { name: 'Map', route: 'Map' },
-        { name: 'Monitoring', route: 'Monitoring' },
-        { name: 'Settings', route: 'Settings' },
-    ];
-
     const isHome = currentRoute === 'Home';
     const homeAnim = useRef(new Animated.Value(0)).current;
-
-    useEffect(() => {
-        Animated.spring(homeAnim, {
-            toValue: isHome ? 1 : 0,
-            useNativeDriver: true,
-            tension: 90,
-            friction: 10,
-        }).start();
-    }, [isHome]);
-
-    const [open, setOpen] = useState(false);
-    const screenWidth = Dimensions.get('window').width;
-    const slideAnim = useRef(new Animated.Value(screenWidth)).current;
-
-    const togglePanel = () => {
-        if (open) {
-            Animated.timing(slideAnim, {
-                toValue: screenWidth, duration: 450, useNativeDriver: true,
-            }).start(() => setOpen(false));
-        } else {
-            setOpen(true);
-            Animated.timing(slideAnim, {
-                toValue: 0, duration: 450, useNativeDriver: true,
-            }).start();
-        }
-    };
-
-    const navigateTo = (route) => {
-        navigation.navigate(route);
-        togglePanel();
-    };
-
-    const visibleTabs = allTabs.filter(tab => {
-        if (tab.adminOnly) return isLoggedIn;
-        return true;
-    });
 
     return (
         <>
@@ -77,7 +34,7 @@ const TopNav = ({ navigation, currentRoute }) => {
                         <Image source={require('../../assets/logo.png')}
                             style={{ width: 60, height: 60, resizeMode: 'cover' }} />
                         <View style={{ alignItems: 'center' }}>
-                            <Text style={{ fontSize: 18, fontWeight: 'bold', color: BLUE }}>WheelMate</Text>
+                            <Text style={{ fontSize: 18, fontWeight: 'bold', color: BLUE, marginBottom: 6 }}>WheelMate</Text>
                             <Animated.View style={{
                                 height: 2, width: '85%', borderRadius: 1,
                                 backgroundColor: BLUE, marginTop: 2,
@@ -91,7 +48,7 @@ const TopNav = ({ navigation, currentRoute }) => {
                     <View style={{
                         flexDirection: 'row', backgroundColor: '#f8fafc',
                         borderRadius: 15, overflow: 'hidden',
-                        borderWidth: 2, borderColor: BLUE,
+                        borderWidth: 2, borderColor: BLUE, marginBottom: 7, marginRight: 20,
                     }}>
                         <TouchableOpacity onPress={openLogin}
                             style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#fff' }}>
@@ -104,39 +61,7 @@ const TopNav = ({ navigation, currentRoute }) => {
                     </View>
                 )}
 
-                <Pressable onPress={togglePanel} style={{ paddingHorizontal: 12, marginRight: 4 }}>
-                    <Text style={{ fontSize: 38, color: BLUE }}>☰</Text>
-                </Pressable>
             </View>
-
-            {open && (
-                <TouchableOpacity activeOpacity={1} onPress={togglePanel}
-                    style={{
-                        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                        backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 90,
-                    }} />
-            )}
-
-            {open && (
-                <Animated.View style={{
-                    position: 'absolute', top: 0, bottom: 0, right: 0,
-                    width: screenWidth * 0.40, backgroundColor: '#fff', zIndex: 100,
-                    shadowColor: '#000', shadowOpacity: 0.15,
-                    shadowOffset: { width: -4, height: 0 }, shadowRadius: 8, elevation: 10,
-                    paddingTop: 60, transform: [{ translateX: slideAnim }],
-                }}>
-                    <TouchableOpacity onPress={togglePanel}
-                        style={{ padding: 16, alignItems: 'flex-start', borderBottomWidth: 1, borderBottomColor: '#e2e8f0' }}>
-                        <Text style={{ fontSize: 18, fontWeight: 'bold', color: BLUE }}>✕</Text>
-                    </TouchableOpacity>
-                    {visibleTabs.map((tab) => (
-                        <TouchableOpacity key={tab.route} onPress={() => navigateTo(tab.route)}
-                            style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' }}>
-                            <Text style={{ fontSize: 16, fontWeight: 'bold', color: BLUE }}>{tab.name}</Text>
-                        </TouchableOpacity>
-                    ))}
-                </Animated.View>
-            )}
         </>
     );
 };

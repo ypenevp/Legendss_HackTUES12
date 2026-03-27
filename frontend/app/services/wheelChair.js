@@ -23,6 +23,7 @@ export const postWheelChair = async () => {
             console.error("POST error:", errorText);
             throw new Error(errorText);
         }
+        alert("Wheelchair added successfully!");
 
         const data = await response.json(); // 👈 ВАЖНО
         console.log("Created wheelchair:", data);
