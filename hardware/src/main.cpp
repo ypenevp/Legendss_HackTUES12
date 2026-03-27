@@ -11,33 +11,38 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 
+//display
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
-
 bool navigationActive = false;
 String direction = "STRAIGHT";
 int distance_m = 0;
 unsigned long lastDisplayUpdate = 0;
 const int TIME_ZONE_OFFSET = 2; 
 
+//UART gsm
 #define SIM_RX_PIN 16
 #define SIM_TX_PIN 17
 HardwareSerial sim(1);
 
+//UART gps
 #define GPS_RX_PIN 18
 #define GPS_TX_PIN 19
 HardwareSerial gpsSerial(2);
 TinyGPSPlus gps;
 
+//Panic button module setup
 #define PANIC_BUTTON_PIN 4
 #define DEACTIVATE_BUTTON_PIN 5
 #define LED_PIN 42
 #define BUZZER_PIN 2
 
+//I2C
 #define MPU_SDA_PIN 8
 #define MPU_SCL_PIN 9
 
+//MPU-6050
 const bool ENABLE_GYRO = true;
 MPU6050 mpu;
 bool mpuReady = false;
@@ -57,6 +62,7 @@ static int fallCounter = 0;
 float Ax = 0, Ay = 0, Az = 1;
 float Gx = 0, Gy = 0, Gz = 0;
 
+
 #define SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
@@ -75,7 +81,7 @@ int numEmergencyContacts = 2;
 
 bool alertTriggered = false;
 unsigned long alertStartTime = 0;
-const unsigned long ALERT_DELAY_MS = 10000;
+const unsigned long ALERT_DELAY_MS = 10000; // 10s cooldown
 
 bool simReady = false;
 bool lockdown = false;
@@ -88,6 +94,9 @@ bool lastDeactivateState = HIGH;
 
 unsigned long lastWiFiSend = 0;
 const unsigned long WIFI_SEND_INTERVAL = 5000;
+
+//////////////////////////////////////////////////////////////////////////////////////////
+//display manage functions
 
 void drawArrow(String dir)
 {
@@ -184,6 +193,8 @@ void updateDisplay()
   display.display();
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
+
 void parseCoordinates(String data)
 {
   int latIndex = data.indexOf("LAT:");
@@ -255,6 +266,9 @@ class MyServerCallbacks : public BLEServerCallbacks
   void onDisconnect(BLEServer *pServer) { deviceConnected = false; }
 };
 
+//////////////////////////////////////////////////////////////////////////////////////////
+//MPU-6050 control
+
 void readMPU()
 {
   if (!mpuReady || !ENABLE_GYRO)
@@ -314,6 +328,8 @@ bool checkFallDetection()
   return (fallCounter >= FALL_CONFIRM_COUNT);
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
+
 String sendATRead(const char *cmd, int timeout = 2000)
 {
   while (sim.available())
@@ -357,6 +373,9 @@ void resetModule()
     sim.read();
   }
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////
+//Sim checks
 
 bool checkModuleAlive()
 {
@@ -437,6 +456,8 @@ bool checkNetwork()
   return false;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
+
 bool sendSMS(String number, String message)
 {
   if (!simReady)
@@ -489,6 +510,7 @@ bool sendSMS(String number, String message)
   return false;
 }
 
+//panic button indication LED and BUZZ
 void alertSignalBlinkLED()
 {
   static unsigned long lastToggle = 0;
@@ -569,6 +591,8 @@ void sendToBackend(bool panicStatus)
   http.end();
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
+
 void setup()
 {
   Serial.begin(115200);
@@ -577,9 +601,10 @@ void setup()
   Wire.begin(MPU_SDA_PIN, MPU_SCL_PIN);
   Wire.setClock(100000);
 
+  //setup display
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
   {
-    Serial.println(F("SSD1306 allocation failed"));
+    Serial.println(F("SSD1306 allocation failed!"));
   }
   else
   {
@@ -587,13 +612,16 @@ void setup()
     display.display();
   }
 
+  //setup panic button indication
   pinMode(PANIC_BUTTON_PIN, INPUT_PULLUP);
   pinMode(DEACTIVATE_BUTTON_PIN, INPUT_PULLUP);
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
+
   digitalWrite(LED_PIN, LOW);
   digitalWrite(BUZZER_PIN, LOW);
 
+// setuo MPU-6050
   Serial.println("\n>> Initializing MPU6050...");
   if (ENABLE_GYRO)
   {
@@ -601,7 +629,7 @@ void setup()
     mpu.initialize();
     delay(500);
     uint8_t id = mpu.getDeviceID();
-    if (id == 0x34 || id == 0x38)
+    if (id == 0x34 || id == 0x38) // !!!
     {
       Serial.printf("   MPU6050 OK (id=0x%02X)\n", id);
       mpu.setSleepEnabled(false);
@@ -615,9 +643,10 @@ void setup()
   }
   else
   {
-    Serial.println("   MPU6050 skipped via software flag.");
+    Serial.println("   MPU6050 skipped flag.");
     mpuReady = false;
   }
+
 
   gpsSerial.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
 
@@ -632,6 +661,7 @@ void setup()
   BLEDevice::getAdvertising()->start();
   Serial.println("BLE Started.");
 
+  //setup GSM
   Serial.println("\n>> SIM800L Init Start");
   sim.begin(9600, SERIAL_8N1, SIM_RX_PIN, SIM_TX_PIN);
   delay(2000);
@@ -648,11 +678,12 @@ void setup()
     Serial.println("\n>> SIM800L Ready.");
   }
 
-  Serial.println("\n>> Connecting to WiFi...");
+  //setup Wi-Fi
+  Serial.println("\n>> Connecting to WiFi..");
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
   int wifiRetries = 0;
-  while (WiFi.status() != WL_CONNECTED && wifiRetries < 20)
+  while (WiFi.status() != WL_CONNECTED && wifiRetries < 15) // try 15 times
   {
     delay(500);
     Serial.print(".");
@@ -661,7 +692,7 @@ void setup()
 
   if (WiFi.status() == WL_CONNECTED)
   {
-    Serial.println("\nWiFi connected!");
+    Serial.println("\nWiFi connected!!!");
     Serial.println(WiFi.localIP());
   }
   else
@@ -669,6 +700,8 @@ void setup()
     Serial.println("\nWiFi FAILED!");
   }
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////
 
 void loop()
 {
@@ -734,7 +767,6 @@ void loop()
 
   bool fallDetected = checkFallDetection();
 
-  // 1. АКТИВИРАНЕ НА АЛАРМАТА
   if ((panicPressed || fallDetected) && !alertTriggered)
   {
     alertTriggered = true;
@@ -750,22 +782,19 @@ void loop()
     digitalWrite(BUZZER_PIN, HIGH);
 
     updateDisplay();
-    sendToBackend(true); // ФИКС: Веднага уведомява бекенда, че има задействана паника
+    sendToBackend(true); 
   }
 
   if (alertTriggered)
   {
-    // 2. ДЕАКТИВИРАНЕ ОТ ПОТРЕБИТЕЛЯ
     if (deactivatePressed)
     {
       alertTriggered = false;
       digitalWrite(BUZZER_PIN, LOW);
       digitalWrite(LED_PIN, LOW);
       Serial.println("Alert DEACTIVATED by user.");
-      sendToBackend(false); // ФИКС: Уведомява, че всичко е наред (беше сложено на true по грешка)
-      updateDisplay();
+      sendToBackend(false); 
     }
-    // 3. ОТКЛЮЧВАНЕ НА LOCKDOWN СЛЕД 10 СЕК
     else if (millis() - alertStartTime >= ALERT_DELAY_MS)
     {
       Serial.println("10 seconds elapsed! Sending SOS...");
@@ -817,11 +846,9 @@ void loop()
     sendGPSData = true;
   }
 
-  // 4. ПЕРИОДИЧНО ИЗПРАЩАНЕ
   if (millis() - lastWiFiSend > WIFI_SEND_INTERVAL)
   {
     lastWiFiSend = millis();
-    // ФИКС: Изпраща текущия статус (ако е в отброяване, праща true, иначе false)
     sendToBackend(alertTriggered); 
   }
 
