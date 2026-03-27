@@ -5,8 +5,7 @@ export const postWheelChair = async () => {
     try {
         const token = await AsyncStorage.getItem("access");
 
-        if(!token){
-            console.log("Error getting token");
+        if (!token) {
             throw new Error("No authentication token found");
         }
 
@@ -17,21 +16,24 @@ export const postWheelChair = async () => {
             },
         });
 
-        if (response.ok) {
-            const data = await response.json();
-            console.log("Wheelchair added successfully");
-            return data;
-        } else {
+        console.log("POST status:", response.status);
+
+        if (!response.ok) {
             const errorText = await response.text();
-            console.error("Server response:", response.status, errorText);
-            throw new Error(`Failed to create update: ${response.status} - ${errorText}`);
+            console.error("POST error:", errorText);
+            throw new Error(errorText);
         }
 
+        const data = await response.json(); // 👈 ВАЖНО
+        console.log("Created wheelchair:", data);
+
+        return data;
+
     } catch (error) {
-        console.error("Error posting a new wheelchair", error);
+        console.error("POST wheelchair error:", error);
         throw error;
     }
-}
+};
 
 export const getAllWheelChair = async() => {
     try {
