@@ -6,4 +6,5 @@ import java.util.Optional;
 
 public interface WheelChairRepository extends JpaRepository<com.legendss.backend.entities.WheelChair, Long> {
     Optional<WheelChair> findByToken(String token);
+    Optional<WheelChair> findByUserId(Long userId);
 }

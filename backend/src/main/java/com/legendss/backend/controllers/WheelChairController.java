@@ -40,10 +40,6 @@ public class WheelChairController {
         return this.wheelChairService.addWheelChair(data, user);
     }
 
-    @GetMapping("/wheelchair/get/all")
-    public List<WheelChair> getAllWheelChair() {
-        return this.wheelChairService.getAllWheelChairs();
-    }
 
     @GetMapping("/wheelchair/get/{id}")
     public WheelChair getWheelChair(@PathVariable Long id, Authentication authentication) {
@@ -51,6 +47,25 @@ public class WheelChairController {
         return this.wheelChairService.getWheelChairSecurely(id, requesterEmail);
     }
 
+    @GetMapping("/wheelchair/user/{userId}")
+    public WheelChair getWheelChairByUserId(@PathVariable Long userId, Authentication authentication) {
+        String requesterEmail = authentication.getName();
+        return this.wheelChairService.getWheelChairByUserIdSecurely(userId, requesterEmail);
+    }
+
+    @GetMapping("/wheelchair/my")
+    public WheelChair getMyWheelChair(Authentication authentication) {
+        String email = authentication.getName();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        return wheelChairService.getWheelChairByUserIdSecurely(user.getId(), email);
+    }
+
+    @GetMapping("/wheelchair/my/associated")
+    public List<WheelChair> getMyAssociatedWheelChairs(Authentication authentication) {
+        String email = authentication.getName();
+        return wheelChairService.getMyAssociatedWheelChairs(email);
+    }
 
     @PatchMapping("/wheelchair/update/{id}")
     public WheelChair updateWheelChair(@PathVariable Long id, @RequestBody WheelChair wheelChair) {
