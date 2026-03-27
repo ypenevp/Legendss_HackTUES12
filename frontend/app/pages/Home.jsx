@@ -1,116 +1,90 @@
-import { Text, View, ScrollView, TouchableOpacity } from 'react-native';
+import { Text, View, ScrollView, TouchableOpacity, Touchable } from 'react-native';
 import { MaterialIcons, Feather, Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import "../global.css"; 
+import { useUser } from '../../context/UserContext';
+import { postWheelChair } from '../services/wheelChair';
 
 export default function Home() {
     const navigation = useNavigation();
+    const { user } = useUser();
+
     return (
-        <ScrollView style={{ flex: 1, backgroundColor: '#fff' }} showsVerticalScrollIndicator={false}>
-
-            <View style={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 32 }}>
-                <View style={{ backgroundColor: '#eff6ff', borderRadius: 24, padding: 24 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-                        <View style={{ width: 40, height: 40, backgroundColor: '#3b82f6', borderRadius: 9999, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                            <MaterialIcons name="accessible" size={22} color="#fff" />
+        <ScrollView
+            style={{ flex: 1, backgroundColor: '#f9fafb' }}
+            contentContainerStyle={{ paddingBottom: 40 }}
+            showsVerticalScrollIndicator={false}
+        >
+            <View style={{ backgroundColor: '#1e40af', paddingTop: 54, paddingBottom: 36, paddingHorizontal: 24 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 22 }}>
+                    <View style={{ width: 50, height: 50, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' }}>
+                        <MaterialIcons name="accessible" size={26} color="#fff" />
+                    </View>
+                    <View>
+                        <Text style={{ fontSize: 26, fontWeight: '800', color: '#fff', letterSpacing: -0.5 }}>
+                            WheelMate
+                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                            <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: '#4ade80' }} />
+                            <Text style={{ fontSize: 12, color: '#4ade80', fontWeight: '500' }}>System online</Text>
                         </View>
-                        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#111827' }}>WheelMate</Text>
                     </View>
-                    <Text style={{ color: '#4b5563', fontSize: 14, lineHeight: 20 }}>
-                        Интелигентна платформа за инвалидни колички — GPS проследяване, умна навигация, SOS сигнали и сензори за препятствия. Вашата мобилност, безопасност и независимост.
-                    </Text>
-                    <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 5 }}>
-                        <TouchableOpacity  style={{ backgroundColor: '#3b82f6', borderRadius: 9999, paddingVertical: 12, paddingHorizontal: 24, alignSelf: 'flex-start', marginTop: 16 }} activeOpacity={0.7} >
-                            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>+ Add new wheelchair</Text>
+                </View>
+
+                <Text style={{ fontSize: 15, color: 'rgba(255,255,255,0.8)', lineHeight: 23, marginBottom: 24 }}>
+                    Интелигентна платформа за инвалидни колички — GPS проследяване, умна навигация, SOS сигнали и сензори за препятствия.
+                </Text>
+
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                    { user?.role === "USER" && (
+                        <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={postWheelChair}
+                            style={{ flex: 1, backgroundColor: '#fff', borderRadius: 14, paddingVertical: 13, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' }}
+                        >
+                            <Text style={{ fontSize: 14, fontWeight: '700', color: '#1e40af' }}>+ Add Wheelchair</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity  style={{ backgroundColor: '#3b82f6', borderRadius: 9999, paddingVertical: 12, paddingHorizontal: 24, alignSelf: 'flex-start', marginTop: 16 }} activeOpacity={0.7} onPress={() => navigation.navigate('RelativesCareTakers')} >
-                            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>+ Add relative/care taker</Text>
-                        </TouchableOpacity>
-                    </View>
+                    
+                    )}
+                    <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => navigation.navigate('Monitoring')}
+                        style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 14, paddingVertical: 13, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' }}
+                    >
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>Monitoring</Text>
+                    </TouchableOpacity>
+
                 </View>
             </View>
 
-            <View style={{ paddingHorizontal: 20, marginBottom: 24 }}>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
-                    <View style={{ width: '48%', backgroundColor: '#f9fafb', borderRadius: 16, padding: 16, marginBottom: 12 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                            <View style={{ width: 40, height: 40, backgroundColor: '#dbeafe', borderRadius: 12, alignItems: 'center', justifyContent: 'center' }}>
-                                <MaterialIcons name="accessible" size={20} color="#3b82f6" />
-                            </View>
-                            <View style={{ backgroundColor: '#dcfce7', borderRadius: 9999, paddingHorizontal: 8, paddingVertical: 2 }}>
-                                <Text style={{ color: '#16a34a', fontSize: 12, fontWeight: '600' }}>+3</Text>
-                            </View>
-                        </View>
-                        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#111827' }}>24</Text>
-                        <Text style={{ color: '#6b7280', fontSize: 12, marginTop: 2 }}>Active Units</Text>
-                    </View>
 
-                    <View style={{ width: '48%', backgroundColor: '#f9fafb', borderRadius: 16, padding: 16, marginBottom: 12 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                            <View style={{ width: 40, height: 40, backgroundColor: '#dbeafe', borderRadius: 12, alignItems: 'center', justifyContent: 'center' }}>
-                                <Feather name="users" size={18} color="#3b82f6" />
-                            </View>
-                            <View style={{ backgroundColor: '#dcfce7', borderRadius: 9999, paddingHorizontal: 8, paddingVertical: 2 }}>
-                                <Text style={{ color: '#16a34a', fontSize: 12, fontWeight: '600' }}>+12</Text>
-                            </View>
-                        </View>
-                        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#111827' }}>156</Text>
-                        <Text style={{ color: '#6b7280', fontSize: 12, marginTop: 2 }}>Users</Text>
-                    </View>
 
-                    <View style={{ width: '48%', backgroundColor: '#f9fafb', borderRadius: 16, padding: 16 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                            <View style={{ width: 40, height: 40, backgroundColor: '#dcfce7', borderRadius: 12, alignItems: 'center', justifyContent: 'center' }}>
-                                <Ionicons name="location" size={18} color="#22c55e" />
-                            </View>
-                            <View style={{ backgroundColor: '#dcfce7', borderRadius: 9999, paddingHorizontal: 8, paddingVertical: 2 }}>
-                                <Text style={{ color: '#16a34a', fontSize: 12, fontWeight: '600' }}>+7</Text>
-                            </View>
-                        </View>
-                        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#111827' }}>89</Text>
-                        <Text style={{ color: '#6b7280', fontSize: 12, marginTop: 2 }}>Routes Today</Text>
-                    </View>
-                    <View style={{ width: '48%', backgroundColor: '#f9fafb', borderRadius: 16, padding: 16 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                            <View style={{ width: 40, height: 40, backgroundColor: '#f3e8ff', borderRadius: 12, alignItems: 'center', justifyContent: 'center' }}>
-                                <Feather name="activity" size={18} color="#a855f7" />
-                            </View>
-                            <View style={{ backgroundColor: '#dcfce7', borderRadius: 9999, paddingHorizontal: 8, paddingVertical: 2 }}>
-                                <Text style={{ color: '#16a34a', fontSize: 12, fontWeight: '600' }}>+0.2%</Text>
-                            </View>
-                        </View>
-                        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#111827' }}>99.8%</Text>
-                        <Text style={{ color: '#6b7280', fontSize: 12, marginTop: 2 }}>Uptime</Text>
-                    </View>
-                </View>
-            </View>
+            <View style={{ paddingHorizontal: 20, marginTop: 32 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#9ca3af', letterSpacing: 1.4, marginBottom: 14 }}>
+                    QUICK ACCESS
+                </Text>
 
-            <View style={{ paddingHorizontal: 20, marginBottom: 32 }}>
                 {[
-                    { icon: 'accessible', iconLib: 'material', color: '#3b82f6', bgVal: '#dbeafe', title: 'Fleet Management', desc: 'Track, add and manage your entire wheelchair fleet with ease.', route: "Settings" },
-                    { icon: 'location', iconLib: 'ionicons', color: '#22c55e', bgVal: '#dcfce7', title: 'Live Tracking', desc: 'Real-time GPS monitoring and route navigation on an interactive map.', route: "Map" },
-                    { icon: 'tablet-landscape', iconLib: 'ionicons', color: '#f59e0b', bgVal: '#fef3c7', title: 'Monitoring', desc: 'Continuous oversight of your fleet\'s performance and status.', route: "Monitoring" },
+                    { icon: 'tablet-landscape', lib: 'ionicons', color: '#3b82f6', bg: '#dbeafe', title: 'Monitoring', desc: 'Live wheelchair data, speed, status and location.', route: 'Monitoring' },
+                    { icon: 'location', lib: 'ionicons', color: '#22c55e', bg: '#dcfce7', title: 'Map & Navigation', desc: 'Real-time GPS tracking and accessible routing.', route: 'Map' },
+                    { icon: 'people', lib: 'ionicons', color: '#8b5cf6', bg: '#ede9fe', title: 'Relatives & Caretakers', desc: 'Manage your connections and emergency contacts.', route: 'RelativesCareTakers' },
                 ].map((item, i) => (
                     <TouchableOpacity
                         key={i}
-                        style={{ backgroundColor: '#f9fafb', borderRadius: 16, padding: 16, marginBottom: 12, flexDirection: 'row', alignItems: 'center' }}
-                        activeOpacity={0.7}
+                        activeOpacity={0.75}
                         onPress={() => navigation.navigate(item.route)}
+                        style={{ backgroundColor: '#fff', borderRadius: 18, padding: 16, marginBottom: 10, flexDirection: 'row', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1, borderWidth: 1, borderColor: '#f3f4f6' }}
                     >
-
-                        <View style={{ width: 48, height: 48, backgroundColor: item.bgVal, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
-                            {item.iconLib === 'material' && <MaterialIcons name={item.icon} size={22} color={item.color} />}
-                            {item.iconLib === 'ionicons' && <Ionicons name={item.icon} size={22} color={item.color} />}
-                            {item.iconLib === 'feather' && <Feather name={item.icon} size={22} color={item.color} />}
+                        <View style={{ width: 46, height: 46, borderRadius: 14, backgroundColor: item.bg, alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
+                            <Ionicons name={item.icon} size={22} color={item.color} />
                         </View>
                         <View style={{ flex: 1 }}>
-                            <Text style={{ color: '#111827', fontWeight: 'bold', fontSize: 16 }}>{item.title}</Text>
-                            <Text style={{ color: '#6b7280', fontSize: 12, marginTop: 2, lineHeight: 16 }}>{item.desc}</Text>
+                            <Text style={{ fontSize: 15, fontWeight: '600', color: '#111827' }}>{item.title}</Text>
+                            <Text style={{ fontSize: 12, color: '#9ca3af', marginTop: 3, lineHeight: 17 }}>{item.desc}</Text>
                         </View>
-                        <Feather name="chevron-right" size={20} color="#d1d5db" />
+                        <Feather name="chevron-right" size={18} color="#d1d5db" />
                     </TouchableOpacity>
                 ))}
             </View>
-        </ScrollView >
+        </ScrollView>
     );
 }
