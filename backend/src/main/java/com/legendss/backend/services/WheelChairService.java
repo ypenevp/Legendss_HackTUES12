@@ -104,4 +104,31 @@ public class WheelChairService {
         this.wheelChairRepository.save(existing);
     }
 
+    public WheelChair getWheelChairSecurely(Long id, String requesterEmail) {
+        WheelChair wheelChair = this.wheelChairRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("WheelChair not found"));
+
+        User owner = wheelChair.getUser();
+
+        if (owner.getEmail().equals(requesterEmail)) {
+            return wheelChair;
+        }
+
+        boolean isRelative = owner.getRelatives() != null && owner.getRelatives().stream()
+                .anyMatch(u -> u.getEmail().equals(requesterEmail));
+
+        if (isRelative) {
+            return wheelChair;
+        }
+
+        boolean isCaretaker = owner.getCaretakers() != null && owner.getCaretakers().stream()
+                .anyMatch(u -> u.getEmail().equals(requesterEmail));
+
+        if (isCaretaker) {
+            return wheelChair;
+        }
+
+        throw new RuntimeException("Access denied: you are not related to this WheelChair");
+    }
+
 }
