@@ -6,6 +6,7 @@ import {
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import "../global.css";
+import { API_URL } from "@env";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const ORS_API_KEY = process.env.EXPO_PUBLIC_ORS_API_KEY;
@@ -149,10 +150,9 @@ export default function MapPage() {
   const [savedRoute, setSavedRoute] = useState(null);
   const [canResume, setCanResume] = useState(false);
 
-  // Изпращане на данните към Spring Boot backend-a
   const sendNavigationUpdate = async (dir, dist) => {
     try {
-      await fetch(`${BACKEND_URL}/api/navigation/update/1`, {
+      await fetch(`${API_URL}/api/navigation/update/1`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -165,7 +165,6 @@ export default function MapPage() {
     }
   };
 
-  // Следи за промяна в текущата стъпка или разстоянието и ги праща към API-то
   useEffect(() => {
     if (steps.length > 0 && activeStep < steps.length) {
       const step = steps[activeStep];
@@ -175,7 +174,6 @@ export default function MapPage() {
     }
   }, [activeStep, distToNext, steps]);
   
-  // Keep refs in sync with state (avoids stale closures in watcher)
   useEffect(() => { destRef.current = destination; }, [destination]);
   useEffect(() => { stepsRef.current = steps; }, [steps]);
 
@@ -184,7 +182,6 @@ export default function MapPage() {
     Animated.spring(panelAnim, { toValue: 1, useNativeDriver: true, tension: 80, friction: 12 }).start();
   };
 
-  // ── Initial permission + GPS fix ──────────────────────────────
   useEffect(() => {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -196,7 +193,6 @@ export default function MapPage() {
     return () => stopWatcher();
   }, []);
 
-  // ── Watcher ───────────────────────────────────────────────────
   const stopWatcher = () => {
     if (watcherRef.current) { watcherRef.current.remove(); watcherRef.current = null; }
   };
@@ -208,34 +204,28 @@ export default function MapPage() {
     );
   };
 
-  // ── Navigation tick ───────────────────────────────────────────
   const onPositionUpdate = (coords) => {
     const pos = { latitude: coords.latitude, longitude: coords.longitude };
     const dest = destRef.current;
     const allCoords = routeCoordsRef.current;
     const stepsSnap = stepsRef.current;
 
-    // Move user dot
     webViewRef.current?.postMessage(JSON.stringify({ type: 'userPos', lat: pos.latitude, lng: pos.longitude }));
     if (!dest || allCoords.length === 0) return;
 
-    // 1. Arrival check
     if (haversine(pos, dest) < ARRIVE_RADIUS) {
       stopWatcher();
-      // Уведомяваме бекенда, че сме пристигнали
       sendNavigationUpdate('ARRIVE', 0);
       setPhase('arrived');
       return;
     }
 
-    // 2. Nearest point on route
     let nearestIdx = 0, nearestDist = Infinity;
     for (let i = 0; i < allCoords.length; i++) {
       const d = haversine(pos, allCoords[i]);
       if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
     }
 
-    // 3. Off-course → silent reroute
     const now = Date.now();
     if (nearestDist > OFF_COURSE_DIST && !isReroutingRef.current && now - lastRerouteRef.current > REROUTE_COOLDOWN) {
       lastRerouteRef.current = now;
@@ -243,19 +233,16 @@ export default function MapPage() {
       return;
     }
 
-    // 4. Trim polyline
     const remaining = allCoords.slice(nearestIdx);
     if (remaining.length > 1) {
       webViewRef.current?.postMessage(JSON.stringify({ type: 'trimRoute', coords: remaining }));
     }
 
-    // 5. Advance steps — never auto-advance to the ARRIVE step (type 11);
-    //    that is handled exclusively by the arrival check above.
     setActiveStep(prev => {
       let next = prev;
       while (next < stepsSnap.length - 1) {
         const step = stepsSnap[next];
-        if (step.type === 11) break;  // never auto-advance past ARRIVE
+        if (step.type === 11) break;
         const endCoord = allCoords[step?.way_points?.[1]];
         if (endCoord && haversine(pos, endCoord) < WAYPOINT_RADIUS) next++;
         else break;
@@ -269,7 +256,6 @@ export default function MapPage() {
     });
   };
 
-  // ── Silent reroute ────────────────────────────────────────────
   const rerouteSilent = async (fromPos, toDest) => {
     isReroutingRef.current = true;
     setRerouting(true);
@@ -284,7 +270,6 @@ export default function MapPage() {
       if (!res.ok || !data.features?.length) return;
       const feature = data.features[0];
       const coords = feature.geometry.coordinates.map(([lng, lat]) => ({ latitude: lat, longitude: lng }));
-      // Filter DEPART (type 12) from nav steps — same as fetchRoute
       const allRaw = feature.properties.segments.flatMap((s) => s.steps).filter(s => s.type !== 12);
       const navSteps = allRaw.filter((s, i) => !(s.type === 11 && i !== allRaw.length - 1));
       routeCoordsRef.current = coords;
@@ -300,7 +285,6 @@ export default function MapPage() {
     }
   };
 
-  // ── Map tap handler ───────────────────────────────────────────
   const onMessage = (e) => {
     try {
       const msg = JSON.parse(e.nativeEvent.data);
@@ -319,7 +303,6 @@ export default function MapPage() {
     } catch { }
   };
 
-  // ── Resume ────────────────────────────────────────────────────
   const resume = () => {
     if (!savedRoute) return;
     setDest(savedRoute.destination);
@@ -334,7 +317,6 @@ export default function MapPage() {
     startWatcher();
   };
 
-  // ── Fetch route (always fresh GPS) ───────────────────────────
   const fetchRoute = async () => {
     if (!destination) return;
     setPhase('routing');
@@ -355,8 +337,6 @@ export default function MapPage() {
       const feature = data.features[0];
       const coords = feature.geometry.coordinates.map(([lng, lat]) => ({ latitude: lat, longitude: lng }));
 
-      // Filter out DEPART (type 12) — it has 0 distance and its end-waypoint
-      //    is right where you are, causing immediate advancement to ARRIVE on first tick.
       const allRaw = feature.properties.segments.flatMap((s) => s.steps).filter(s => s.type !== 12);
       const navSteps = allRaw.filter((s, i) => !(s.type === 11 && i !== allRaw.length - 1));
 
@@ -375,7 +355,6 @@ export default function MapPage() {
     }
   };
 
-  // ── Full reset ────────────────────────────────────────────────
   const reset = () => {
     stopWatcher();
     setDest(null); setSteps([]); setSummary(null);
@@ -386,7 +365,6 @@ export default function MapPage() {
     webViewRef.current?.postMessage(JSON.stringify({ type: 'reset' }));
   };
 
-  // ─────────────────────────────────────────────────────────────
   return (
     <View style={s.root}>
 
@@ -400,7 +378,6 @@ export default function MapPage() {
             html: buildMapHTML(location.latitude, location.longitude),
             baseUrl: 'https://openstreetmap.org'
           }}
-          // Use a completely unique name so OSM doesn't block you
           userAgent="Legendss_HackTUES12_App/1.0 (Hackathon Project)"
           onMessage={onMessage}
           javaScriptEnabled
@@ -417,14 +394,12 @@ export default function MapPage() {
         </View>
       )}
 
-      {/* HINT */}
       {phase === 'pinning' && (
         <View style={s.hint} pointerEvents="none">
           <Text style={s.hintText}>Tap the map to pin your destination</Text>
         </View>
       )}
 
-      {/* REROUTING TOAST */}
       {rerouting && (
         <View style={s.rerouteToast} pointerEvents="none">
           <ActivityIndicator size="small" color="#f59e0b" style={{ marginRight: 8 }} />
@@ -484,7 +459,6 @@ export default function MapPage() {
           {/* DONE — live directions */}
           {phase === 'done' && steps.length > 0 && (
             <>
-              {/* Hero card: arrow + label + live distance */}
               {steps[activeStep] && (
                 <View style={s.heroCard}>
                   <Text style={s.heroArrow}>{STEP_ARROW[steps[activeStep].type] ?? '→'}</Text>
@@ -502,7 +476,6 @@ export default function MapPage() {
                 </View>
               )}
 
-              {/* Step counter + ETA */}
               <View style={s.dividerRow}>
                 <View style={s.divider} />
                 <Text style={s.stepCount}>
@@ -513,7 +486,6 @@ export default function MapPage() {
                 <View style={s.divider} />
               </View>
 
-              {/* Full step list */}
               <ScrollView ref={stepListRef} style={s.list} showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: 8 }}>
                 {steps.map((step, i) => {
@@ -548,7 +520,6 @@ export default function MapPage() {
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0a0a0a' },
   map: { flex: 1 },
@@ -618,7 +589,6 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#1f2937', borderRadius: 16,
     padding: 14, marginBottom: 10, gap: 12,
-    // ПРОМЕНЕНО
     borderWidth: 1, borderColor: 'rgba(59,130,246,0.25)',
   },
   heroArrow: { fontSize: 36, width: 48, textAlign: 'center' },

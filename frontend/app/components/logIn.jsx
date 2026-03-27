@@ -1,4 +1,4 @@
-import { Text, View, TextInput, TouchableOpacity } from "react-native";
+import { Text, View, TextInput, TouchableOpacity, ScrollView } from "react-native";
 import { useState } from "react";
 import { handleLogin } from "../services/auth";
 import { useAuth } from '../../context/AuthContext';
@@ -34,7 +34,10 @@ export default function Login({ onSignUpPress, onLoginSuccess, onClose }) {
     };
 
     return (
-        <View style={{ width: "100%", alignItems: "center", justifyContent: "center", backgroundColor: "#fff", borderRadius: 24 }}>
+        <ScrollView contentContainerStyle={{
+            flexGrow: 1, justifyContent: "center", alignItems: "center",
+            padding: 24
+        }} showsVerticalScrollIndicator={false}>
             <TouchableOpacity onPress={onClose} style={{ position: "absolute", top: 0, left: 0 }}>
                 <Text style={{ fontSize: 24, color: BLUE }}>←</Text>
             </TouchableOpacity>
@@ -133,6 +136,6 @@ export default function Login({ onSignUpPress, onLoginSuccess, onClose }) {
                     <Text style={{ color: BLUE, fontWeight: "700", fontSize: 15 }}>Sign up</Text>
                 </TouchableOpacity>
             </View>
-        </View>
+        </ScrollView>
     );
 }
