@@ -53,13 +53,6 @@ public class WheelChairController {
         return this.wheelChairService.getWheelChairByUserIdSecurely(userId, requesterEmail);
     }
 
-    @GetMapping("/wheelchair/my")
-    public WheelChair getMyWheelChair(Authentication authentication) {
-        String email = authentication.getName();
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-        return wheelChairService.getWheelChairByUserIdSecurely(user.getId(), email);
-    }
 
     @GetMapping("/wheelchair/my/associated")
     public List<WheelChair> getMyAssociatedWheelChairs(Authentication authentication) {
